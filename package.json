@@ -1,0 +1,16 @@
+{
+  "name": "node-wordfieldcodes",
+  "version": "1.0.0",
+  "description": "Synchronise Field codes in word with a json file",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "docxtemplater": "^3.5.2",
+    "jszip": "^2.6.1"
+  },
+  "bin": "main.js",
+  "author": "",
+  "license": "ISC"
+}
