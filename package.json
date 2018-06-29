@@ -10,7 +10,9 @@
     "docxtemplater": "^3.5.2",
     "jszip": "^2.6.1"
   },
-  "bin": "main.js",
+  "bin": {
+  	"wordfieldcode" : "main.js"
+  },
   "author": "",
   "license": "ISC"
 }
