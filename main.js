@@ -12,9 +12,9 @@ var fieldcode = require('./js/fieldcode');
 
 //Load the docx file as a binary
 const content = fs
-    .readFileSync(path.resolve(__dirname, process.argv[2]), 'binary');
+    .readFileSync( path.resolve(process.cwd(), process.argv[2]), 'binary');
 
-const rawdata = fs.readFileSync(path.resolve(__dirname, process.argv[3]));
+const rawdata = fs.readFileSync(path.resolve(process.cwd(), process.argv[3]));
 
 const data = JSON.parse(rawdata);
 
@@ -47,4 +47,4 @@ const buf = doc.getZip()
              .generate({type: 'nodebuffer'});
 
 // buf is a nodejs buffer, you can either write it to a file or do anything else with it.
-fs.writeFileSync(path.resolve(__dirname, process.argv[2]), buf);
+fs.writeFileSync(path.resolve(process.cwd(), process.argv[2]), buf);
