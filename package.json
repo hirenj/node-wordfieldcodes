@@ -11,7 +11,8 @@
     "jszip": "^2.6.1"
   },
   "bin": {
-  	"wordfieldcode" : "main.js"
+    "wordfieldcode" : "main.js",
+    "refmanager" : "citation.js"
   },
   "author": "",
   "license": "ISC"
