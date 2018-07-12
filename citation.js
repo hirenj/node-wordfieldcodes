@@ -26,6 +26,9 @@ doc.loadZip(zip).setOptions({delimiters:{start:'[REF',end:']'}});
 
 doc.setData(data);
 
+// Endnote xml format for a single DOI?
+// ADDIN EN.CITE <xml><records><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></records></xml>
+
 
 try {
     // render the document (replace all occurences of {first_name} by John, {last_name} by Doe, ...)
