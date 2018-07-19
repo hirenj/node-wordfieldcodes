@@ -17,6 +17,22 @@ const find_runid = (elements,start) => {
   }
 };
 
+const find_run_start = (elements,start) => {
+  let previous = elements.slice(0,start).reverse();
+  let tag = previous.filter( tag => tag.value.indexOf('w:fldCharType="begin"') >= 0 )[0];
+  previous = previous.slice(previous.indexOf(tag));
+  while (tag.tag !== 'w:r') {
+    tag = previous.shift();
+  }
+  return tag;
+};
+
+const find_run_end = (elements,start) => {
+  let nextels = elements.slice(start);
+  let tag = nextels.filter( tag => tag.value.indexOf('w:fldCharType="end"') >= 0 )[0];
+  return nextels[nextels.indexOf(tag)+1];
+};
+
 const find_nexttextel = (elements,tagid) => {
   tagid = tagid || '';
   let next = elements.filter( tag => tag.value.indexOf('w:fldCharType="separate"') >= 0);
@@ -65,18 +81,26 @@ const fieldCodeModule = {
 
     let fieldcodes = postparsed.filter( bit => bit.type === 'content' && bit.value.indexOf(FIELDCODE) >= 0);
     for (let field of fieldcodes) {
-      let tagid = find_runid(postparsed,field.lIndex);
+      let field_start = find_run_start(postparsed,postparsed.indexOf(field));
+      let field_end = find_run_end(postparsed,postparsed.indexOf(field));
       let code_matcher = new RegExp(`\{${PREFIX}([^\}]+)\}`);
       let valuetext = field.value.match(code_matcher);
-      let textel = find_nexttextel(postparsed.slice(field.lIndex+1),tagid);
-      if ( ! textel ) {
-        continue;
-      }
-      postparsed[postparsed.indexOf(textel)] = {
+      // let textel = find_nexttextel(postparsed.slice(field.lIndex+1),tagid);
+      // if ( ! textel ) {
+      //   continue;
+      // }
+      postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
         value: valuetext[1],
         type: 'placeholder',
-        offset: textel.offset
-      }
+        module: moduleName
+      });
+
+      // console.log(textel);
+      // postparsed[postparsed.indexOf(textel)] = {
+      //   value: valuetext[1],
+      //   type: 'placeholder',
+      //   offset: textel.offset
+      // }
     }
     return { postparsed: postparsed, errors: [] };
   },
@@ -86,13 +110,13 @@ const fieldCodeModule = {
     }
     let value = options.scopeManager.getValue(part.value, { part });
     if (value == null) {
-      value = options.nullGetter(part);
+      return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>{${PREFIX}${part.value}}</w:t></w:r>` };
     }
     if (!value) {
       return { value: part.emptyValue || "" };
     }
     let codeid= FIELDCODE+(new Date().getTime());
-    value = `<w:r><w:rPr></w:rPr><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText>ADDIN ${FIELDCODE} {${PREFIX}${part.value}}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/></w:rPr><w:t>${value}</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r></w:r>`;
+    value = `<w:r><w:rPr></w:rPr><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText>ADDIN ${FIELDCODE} {${PREFIX}${part.value}}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:highlight w:val="yellow"/><w:noProof/></w:rPr><w:t>${value}</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r></w:r>`;
     return { value };
   }
 };
