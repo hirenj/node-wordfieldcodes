@@ -48,6 +48,7 @@ const find_nexttextel = (elements,tagid) => {
 const fieldCodeModule = {
   name: "FieldCodeModule",
   prefix: PREFIX,
+  readonly: false,
   parse(placeHolderContent) {
     const type = "placeholder";
     if (placeHolderContent[0] !== this.prefix) {
@@ -109,6 +110,9 @@ const fieldCodeModule = {
       return null;
     }
     let value = options.scopeManager.getValue(part.value, { part });
+
+    console.log(part.value);
+
     if (value == null) {
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>{${PREFIX}${part.value}}</w:t></w:r>` };
     }

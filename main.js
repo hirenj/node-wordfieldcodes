@@ -14,9 +14,16 @@ var fieldcode = require('./js/fieldcode');
 const content = fs
     .readFileSync( path.resolve(process.cwd(), process.argv[2]), 'binary');
 
-const rawdata = fs.readFileSync(path.resolve(process.cwd(), process.argv[3]));
+let data = {};
 
-const data = JSON.parse(rawdata);
+let readonly = false;
+
+if ( process.argv[3] ) {
+    const rawdata = fs.readFileSync(path.resolve(process.cwd(), process.argv[3]));
+    data = JSON.parse(rawdata);
+} else {
+    readonly = true;
+}
 
 const zip = new JSZip(content);
 
@@ -43,8 +50,11 @@ catch (error) {
     throw error;
 }
 
-const buf = doc.getZip()
-             .generate({type: 'nodebuffer'});
+if ( ! readonly ) {
 
-// buf is a nodejs buffer, you can either write it to a file or do anything else with it.
-fs.writeFileSync(path.resolve(process.cwd(), process.argv[2]), buf);
+    const buf = doc.getZip()
+                 .generate({type: 'nodebuffer'});
+
+    // buf is a nodejs buffer, you can either write it to a file or do anything else with it.
+    fs.writeFileSync(path.resolve(process.cwd(), process.argv[2]), buf);
+}
