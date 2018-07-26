@@ -3,9 +3,10 @@ const moduleName = "cslcitation";
 const FIELDCODE = 'CSL_CITATION';
 const PREFIX = '';
 
-const find_run_start = (elements,start) => {
-  let previous = elements.slice(0,start).reverse();
-  let tag = previous.filter( tag => tag.value.indexOf('w:fldCharType="begin"') >= 0 )[0];
+const find_run_start = (elements,start_el) => {
+  let previous = elements.slice(0,elements.indexOf(start_el)).reverse();
+
+  let tag = previous.filter( tag => tag.value && (typeof tag.value == 'string') && tag.value.indexOf('w:fldCharType="begin"') >= 0 )[0];
   previous = previous.slice(previous.indexOf(tag));
   while (tag.tag !== 'w:r') {
     tag = previous.shift();
@@ -13,8 +14,8 @@ const find_run_start = (elements,start) => {
   return tag;
 };
 
-const find_run_end = (elements,start) => {
-  let nextels = elements.slice(start);
+const find_run_end = (elements,start_el) => {
+  let nextels = elements.slice(elements.indexOf(start_el));
   let tag = nextels.filter( tag => tag.value.indexOf('w:fldCharType="end"') >= 0 )[0];
   return nextels[nextels.indexOf(tag)+1];
 };
@@ -65,8 +66,8 @@ const cslCitationModule = {
 
     let fieldcodes = postparsed.filter( bit => bit.type === 'content' && bit.value.indexOf(FIELDCODE) >= 0);
     for (let field of fieldcodes) {
-      let field_start = find_run_start(postparsed,field.lIndex);
-      let field_end = find_run_end(postparsed,field.lIndex);
+      let field_start = find_run_start(postparsed,field);
+      let field_end = find_run_end(postparsed,field);
       let code_matcher = new RegExp(`id":"NICKNAME([^"]+)"`);
       let valuetext = field.value.match(code_matcher);
       let doi_matcher = new RegExp('DOI":"([^"]+)"');
@@ -86,7 +87,10 @@ const cslCitationModule = {
           valuetext[1].uuid = uuid_match[1];
         }
       }
-
+      if ( ! valuetext ) {
+        postparsed.splice(postparsed.indexOf(field),1);
+        continue;
+      }
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
         value: valuetext[1],
         type: 'placeholder',
@@ -112,7 +116,7 @@ const cslCitationModule = {
         }
       });
     }
-    let part_id = part.value.replace(/\s+/g,'_');
+    let part_id = part.value.replace(/\s+/g,'_').toLowerCase();
     let value = options.scopeManager.getValue(part_id, { part });
 
     if (value == null) {

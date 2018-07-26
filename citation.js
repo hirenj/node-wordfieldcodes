@@ -24,7 +24,16 @@ const doc = new Docxtemplater();
 doc.attachModule(fieldcode);
 doc.loadZip(zip).setOptions({delimiters:{start:'[REF',end:']'}});
 
-doc.setData(data);
+const objectKeysToLowerCase = function (origObj) {
+    return Object.keys(origObj).reduce(function (newObj, key) {
+        let val = origObj[key];
+        let newVal = (typeof val === 'object') ? objectKeysToLowerCase(val) : val;
+        newObj[key.toLowerCase()] = newVal;
+        return newObj;
+    }, {});
+};
+
+doc.setData(objectKeysToLowerCase(data));
 
 // Endnote xml format for a single DOI?
 // ADDIN EN.CITE <xml><records><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></records></xml>
