@@ -5,24 +5,26 @@ const PREFIX = '';
 
 const find_run_start = (elements,start_el) => {
   let previous = elements.slice(0,elements.indexOf(start_el)).reverse();
-
   let tag = previous.filter( tag => tag.value && (typeof tag.value == 'string') && tag.value.indexOf('w:fldCharType="begin"') >= 0 )[0];
   previous = previous.slice(previous.indexOf(tag));
-  while (tag.tag !== 'w:r') {
+  while (tag.tag !== 'w:r' && previous.length > 0) {
     tag = previous.shift();
+  }
+  if (tag.tag !== 'w:r') {
+    throw new Error('Couldnt find start tag for ',start_el);
   }
   return tag;
 };
 
 const find_run_end = (elements,start_el) => {
   let nextels = elements.slice(elements.indexOf(start_el));
-  let tag = nextels.filter( tag => tag.value.indexOf('w:fldCharType="end"') >= 0 )[0];
+  let tag = nextels.filter( tag => tag.value && (typeof tag.value == 'string') && tag.value.indexOf('w:fldCharType="end"') >= 0 )[0];
   return nextels[nextels.indexOf(tag)+1];
 };
 
 const find_nexttextel = (elements,tagid) => {
   tagid = tagid || '';
-  let next = elements.filter( tag => tag.value.indexOf('w:fldCharType="separate"') >= 0);
+  let next = elements.filter( tag => tag.value &&  (typeof tag.value == 'string') && tag.value.indexOf('w:fldCharType="separate"') >= 0);
   if (next.length < 1) {
     return;
   }
@@ -90,6 +92,12 @@ const cslCitationModule = {
       if ( ! valuetext ) {
         postparsed.splice(postparsed.indexOf(field),1);
         continue;
+      }
+      let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
+      if (removed.length > 25) {
+        console.log('Removing ',field, postparsed.indexOf(field_start), postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1);
+        console.log(removed.slice(0,30));
+        throw new Error('Removing too much');
       }
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
         value: valuetext[1],
