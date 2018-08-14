@@ -94,9 +94,9 @@ const cslCitationModule = {
         continue;
       }
       let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
-      if (removed.length > 25) {
+      if (removed.length > 33) {
         console.log('Removing ',field, postparsed.indexOf(field_start), postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1);
-        console.log(removed.slice(0,30));
+        console.log(removed.slice(0,40));
         throw new Error('Removing too much');
       }
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
