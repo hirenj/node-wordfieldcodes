@@ -68,6 +68,9 @@ const cslCitationModule = {
 
     let fieldcodes = postparsed.filter( bit => bit.type === 'content' && bit.value.indexOf(FIELDCODE) >= 0);
     for (let field of fieldcodes) {
+      if ( field.removed ) {
+        continue;
+      }
       let field_start = find_run_start(postparsed,field);
       let field_end = find_run_end(postparsed,field);
       let code_matcher = new RegExp(`id":"NICKNAME([^"]+)"`);
@@ -94,10 +97,21 @@ const cslCitationModule = {
         continue;
       }
       let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
-      if (removed.length > 33) {
-        console.log('Removing ',field, postparsed.indexOf(field_start), postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1);
-        console.log(removed.slice(0,40));
-        throw new Error('Removing too much');
+      let removed_field_codes = removed.filter( bit => bit.type === 'content' && bit.value.indexOf(FIELDCODE) >= 0 );
+      if (removed_field_codes.length > 1 || removed_field_codes[0] !== field) {
+        removed_field_codes.filter( bit => bit !== field ).forEach( fld => {
+          if (fld.value === field.value) {
+            fld.removed = true;
+          }
+        });
+        if (removed_field_codes.filter( bit => bit !== field && ! bit.removed ).length > 0) {
+          console.log('Removing ',field, postparsed.indexOf(field_start), postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1);
+          console.log(removed.slice(0,40));
+          console.log('********------***********');
+          console.log(postparsed.indexOf(field));
+          console.log(postparsed.slice( postparsed.indexOf(field) - 20, postparsed.indexOf(field) + 20 ));
+          throw new Error('Removing too much');
+        }
       }
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
         value: valuetext[1],
