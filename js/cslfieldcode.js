@@ -81,15 +81,15 @@ const cslCitationModule = {
         if (doi_match) {
           valuetext = [null,{ DOI: doi_match[1] }];
         }
-        let uuid_match = field.value.match(/uuid=([a-z0-9\-]+)"/);
+        let uuid_match = field.value.match(/uuid=([a-z0-9\-]+)"/g);
         if (uuid_match) {
-          valuetext[1].uuid = uuid_match[1];
+          valuetext[1].uuid = uuid_match.map( match => match.replace('"',''));
         }
       } else {
         valuetext = [ null, { nickname: valuetext[1] }]
-        let uuid_match = field.value.match(/uuid=([a-z0-9\-]+)"/);
+        let uuid_match = field.value.match(/uuid=([a-z0-9\-]+)"/g);
         if (uuid_match) {
-          valuetext[1].uuid = uuid_match[1];
+          valuetext[1].uuid = uuid_match.map( match => match.replace('"',''));
         }
       }
       if ( ! valuetext ) {
@@ -150,15 +150,34 @@ const cslCitationModule = {
     let codeid= FIELDCODE+(new Date().getTime());
     const csl = {
       "DOI": value || "1.2.3/abc",
+      "ID" :"NICKNAME"+part_id,
+      "author": [
+          {
+              "dropping-particle": "",
+              "family": part_id,
+              "given": "",
+              "non-dropping-particle": "",
+              "parse-names": false,
+              "suffix": ""
+          }]
+
     };
     const csl_dat = { "citationItems": [{
       "id": "NICKNAME"+part_id,
-      "itemData": csl
+      "itemData": csl,
+      "uris" : [ `http://www.mendeley.com/documents/?uuid=${part_id}` ]
     }],
+    "mendeley": {
+        "formattedCitation": `[REF ${part_id}]`,
+        "plainTextFormattedCitation": `[REF ${part_id}]`
+    },
+    "properties": {
+        "noteIndex": 0
+    },
     "schema": "https://github.com/citation-style-language/schema/raw/master/csl-citation.json"
     };
     if ( uuid ) {
-      csl_dat.citationItems[0].uris = [`http://www.mendeley.com/documents/?uuid=${uuid}`];
+      csl_dat.citationItems[0].uris = [...new Set([`http://www.mendeley.com/documents/?uuid=${part_id}` ].concat( uuid.map( id => `http://www.mendeley.com/documents/?${id}` ) ))];
     }
     let csl_json = JSON.stringify(csl_dat);
     // csl_json = '<EndNote><Cite><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></Cite></EndNote>'.replace(/</g,'&lt;').replace(/>/g,'&gt;');
