@@ -123,14 +123,17 @@ const fieldCodeModule = {
     if (format === '%s') {
       formatted_value = value;
     }
+    if (format === '%d') {
+      formatted_value = parseFloat(value).toLocaleString('en-UK');
+    }
     let signif,signiftype;
     if (([,signif,signiftype]=(format.match(/%.(\d)(f|g)/)||new Array())) && signif ) {
       let opts = {};
-      if (opts.signiftype === 'f') {
+      if (signiftype === 'f') {
         opts.minimumFractionDigits = signif;
         opts.maximumFractionDigits = signif;
       }
-      if (opts.signiftype === 'g') {
+      if (signiftype === 'g') {
         opts.minimumSignificantDigits = signif;
         opts.maximumSignificantDigits = signif;
       }
