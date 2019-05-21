@@ -85,7 +85,9 @@ const fieldCodeModule = {
       let field_start = find_run_start(postparsed,postparsed.indexOf(field));
       let field_end = find_run_end(postparsed,postparsed.indexOf(field));
       let code_matcher = new RegExp(`\{${PREFIX}([^\}]+)\}`);
-      let valuetext = field.value.match(code_matcher);
+      let field_chunk_values = postparsed.slice(postparsed.indexOf(field_start),postparsed.indexOf(field_end)).map( v => v.value );
+      let directive = field_chunk_values.filter( val => val.match(/instrText/) ).map( val => val.replace(/<\/?w:instrText>/g,'')).join('');
+      let valuetext = directive.match(code_matcher);
       // let textel = find_nexttextel(postparsed.slice(field.lIndex+1),tagid);
       // if ( ! textel ) {
       //   continue;
@@ -109,9 +111,32 @@ const fieldCodeModule = {
     if (part.module !== moduleName) {
       return null;
     }
-    let value = options.scopeManager.getValue(part.value, { part });
 
-    console.log(part.value);
+    let part_varname = part.value;
+    let format = '%s';
+    if (part_varname.indexOf('#') >= 0) {
+      [part_varname,format] = part_varname.split('#');
+    }
+    let value = options.scopeManager.getValue(part_varname, { part });
+
+    let formatted_value = value;
+    if (format === '%s') {
+      formatted_value = value;
+    }
+    let signif,signiftype;
+    if (([,signif,signiftype]=(format.match(/%.(\d)(f|g)/)||new Array())) && signif ) {
+      let opts = {};
+      if (opts.signiftype === 'f') {
+        opts.minimumFractionDigits = signif;
+        opts.maximumFractionDigits = signif;
+      }
+      if (opts.signiftype === 'g') {
+        opts.minimumSignificantDigits = signif;
+        opts.maximumSignificantDigits = signif;
+      }
+      formatted_value = parseFloat(value).toLocaleString('en-UK',opts);
+    }
+    console.log('Part value',part_varname,formatted_value);
 
     if (value == null) {
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>{${PREFIX}${part.value}}</w:t></w:r>` };
@@ -120,8 +145,8 @@ const fieldCodeModule = {
       return { value: part.emptyValue || "" };
     }
     let codeid= FIELDCODE+(new Date().getTime());
-    value = `<w:r><w:rPr></w:rPr><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText>ADDIN ${FIELDCODE} {${PREFIX}${part.value}}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:highlight w:val="yellow"/><w:noProof/></w:rPr><w:t>${value}</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r></w:r>`;
-    return { value };
+    let value_tags = `<w:r><w:rPr></w:rPr><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText>ADDIN ${FIELDCODE} {${PREFIX}${part.value}}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:highlight w:val="yellow"/><w:noProof/></w:rPr><w:t>${formatted_value}</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r></w:r>`;
+    return { value: value_tags };
   }
 };
 
