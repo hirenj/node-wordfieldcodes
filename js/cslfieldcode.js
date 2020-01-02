@@ -34,6 +34,49 @@ const find_nexttextel = (elements,tagid) => {
   return elements[elements.indexOf( start_text[0] )+1 ];
 }
 
+
+const find_tables = (postparsed) => {
+  let table_starts = postparsed.filter( bit => bit.type === 'content' && bit.value.indexOf('<w:tbl>') >= 0);
+  let table_indices = table_starts.map( start => {
+    let start_idx = postparsed.indexOf(start);
+    let end = postparsed.slice(start_idx).filter( bit => bit.type === 'content' && bit.value.indexOf('</w:tbl>') >= 0).shift();
+    return {start: start_idx, end: postparsed.indexOf(end)+1};
+  });
+
+  const tables = [];
+
+  for (let {start,end} of table_indices) {
+    const table = postparsed.slice(start,end);
+
+    const boundaries = table.filter( bit => ['w:tc','w:tr'].indexOf(bit.tag) >= 0 && bit.position === 'start').map( bit => bit.tag );
+    const num_columns = boundaries.slice(1).indexOf('w:tr');
+    const cellstarts = table.filter( bit => bit.tag === 'w:tc' && bit.position === 'start');
+    const cell_indices = cellstarts.map( start_cell => {
+      let start_idx = table.indexOf(start_cell);
+      let end = table.slice(start_idx).filter( bit => bit.tag === 'w:tc' && bit.position === 'end').shift();
+      return {start: postparsed.indexOf(table[start_idx]), end: postparsed.indexOf(end)+1 };
+    });
+    const cells = [];
+    const headers = [];
+    cell_indices.forEach( ({start: cell_start,end: cell_end},idx) => {
+      let cell = postparsed.slice(cell_start,cell_end);
+      let content = cell.filter( bit => bit.position === 'insidetag').map( bit => bit.value).join('');
+      let row_num = Math.floor(idx / num_columns);
+      if (row_num === 0) {
+        headers.push(content.toLowerCase());
+      } else {
+        if ( ! cells[row_num-1]) {
+          cells[row_num-1] = {};
+        }
+        cells[row_num-1][headers[ idx % num_columns ]] = content;
+      }
+    });
+    tables.push(cells);
+  }
+  return tables;
+};
+
+
 const cslCitationModule = {
   name: "CslCitationModule",
   prefix: PREFIX,
@@ -42,7 +85,11 @@ const cslCitationModule = {
     console.log(placeHolderContent.trim());
     return { type, value: placeHolderContent.trim(), module: moduleName };
   },
-  postparse(postparsed) {
+  postparse(postparsed,options) {
+
+
+    this.tables = find_tables(postparsed);
+
     let placeholders = postparsed.filter( bit => bit.type === 'placeholder' && bit.module === moduleName);
 
     for (let placeholder of placeholders) {
@@ -125,6 +172,15 @@ const cslCitationModule = {
     if (part.module !== moduleName) {
       return null;
     }
+
+    if (this.tables && this.tables.length > 0) {
+      for (let table of this.tables.filter( table => table.length > 0)) {
+        if (table[0].reference && (table[0].doi || table[0].pmid)) {
+          options.scopeManager.scopeList.push( table.reduce((curr,row) => { curr[row.reference.toLowerCase()] = row.doi || row.pmid; return curr; } ,{}) );
+        }
+      }
+    }
+
     let uuid = null;
     if (typeof part.value !== 'string') {
       uuid = part.value.uuid;

@@ -14,9 +14,9 @@ var fieldcode = require('./js/cslfieldcode');
 const content = fs
     .readFileSync( path.resolve(process.cwd(), process.argv[2]), 'binary');
 
-const rawdata = fs.readFileSync(path.resolve(process.cwd(), process.argv[3]));
+const rawdata = process.argv[3] ? fs.readFileSync(path.resolve(process.cwd(), process.argv[3])) : null;
 
-const data = JSON.parse(rawdata);
+const data = rawdata ? JSON.parse(rawdata) : {};
 
 const zip = new JSZip(content);
 
