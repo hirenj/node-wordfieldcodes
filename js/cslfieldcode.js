@@ -118,11 +118,27 @@ const cslCitationModule = {
       if ( field.removed ) {
         continue;
       }
+
+      continue;
+
       let field_start = find_run_start(postparsed,field);
       let field_end = find_run_end(postparsed,field);
+      let whole_value = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)).map( item => item.value ).join('');
+      let json_part = whole_value.match(/ADDIN CSL_CITATION\s*([^<]+)/);
+      if( ! json_part) {
+        continue;
+      }
+      let csl_existing = JSON.parse(json_part[1]);
+      for (let item of csl_existing.citationItems) {
+        if (! item.id.match(/^NICKNAME/)) {
+          continue;
+        }
+        if (item.itemData.DOI) {
+        }
+      }
+      console.log(csl_existing);
       let code_matcher = new RegExp(`id":"NICKNAME([^"]+)"`);
       let valuetext = field.value.match(code_matcher);
-      console.log("VALUETEXT IS",valuetext,valuetext[1]);
       let doi_matcher = new RegExp('DOI":"([^"]+)"');
       if ( ! valuetext ) {
         let doi_match = field.value.match(doi_matcher);
