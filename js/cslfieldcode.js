@@ -122,6 +122,7 @@ const cslCitationModule = {
       let field_end = find_run_end(postparsed,field);
       let code_matcher = new RegExp(`id":"NICKNAME([^"]+)"`);
       let valuetext = field.value.match(code_matcher);
+      console.log("VALUETEXT IS",valuetext,valuetext[1]);
       let doi_matcher = new RegExp('DOI":"([^"]+)"');
       if ( ! valuetext ) {
         let doi_match = field.value.match(doi_matcher);
@@ -194,38 +195,68 @@ const cslCitationModule = {
         }
       });
     }
+
     let part_id = part.value.replace(/\s+/g,'_').toLowerCase();
+
+    let all_pmids=[];
+    let re = /PMID[:_]\s*(\d+)/g;
+    let matchval;
+    while (matchval = re.exec(part.value)) {
+      all_pmids.push(matchval[1])
+      // part_id = 'PMID_'+PMID;
+    }
+
+    console.log(all_pmids);
+
     let value = options.scopeManager.getValue(part_id, { part });
+
+    let DOI = value;
 
     if (value == null) {
       value = options.nullGetter(part);
     }
-    if (!value) {
+
+    if (! DOI && all_pmids.length < 1) {
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r>` };
     }
-    let codeid= FIELDCODE+(new Date().getTime());
-    const csl = {
-      "DOI": value || "1.2.3/abc",
-      "ID" :"NICKNAME"+part_id,
-      "author": [
-          {
-              "dropping-particle": "",
-              "family": part_id,
-              "given": "",
-              "non-dropping-particle": "",
-              "parse-names": false,
-              "suffix": ""
-          }]
 
-    };
-    const csl_dat = { "citationItems": [{
-      "id": "NICKNAME"+part_id,
-      "itemData": csl,
-      "uris" : [ `http://www.mendeley.com/documents/?uuid=${part_id}` ]
-    }],
+    let codeid= FIELDCODE+(new Date().getTime());
+
+    citationItems = all_pmids.concat( DOI ).filter( val => val ).map( (idval) => {
+      let part_id = idval.match(/^\d+$/) ? `PMID_${idval}` : part.value.replace(/\s+/g,'_').toLowerCase();
+      const csl = {
+        "ID" :"NICKNAME"+part_id,
+        "author": [
+            {
+                "dropping-particle": "",
+                "family": part_id,
+                "given": "",
+                "non-dropping-particle": "",
+                "parse-names": false,
+                "suffix": ""
+            }]
+
+      };
+      if (part_id.indexOf('PMID') == 0) {
+        csl.PMID = idval;
+      } else {
+        csl.DOI = idval;
+      }
+
+      return {
+        "id": "NICKNAME"+part_id,
+        "itemData": csl,
+        "uris" : [ `http://www.mendeley.com/documents/?uuid=${part_id}` ]
+      };
+    });
+
+    console.log(citationItems);
+
+    const csl_dat = {
+    citationItems,
     "mendeley": {
-        "formattedCitation": `[REF ${part_id}]`,
-        "plainTextFormattedCitation": `[REF ${part_id}]`
+        "formattedCitation": `[REF ${all_pmids.length > 0 ? part.value : part_id}]`,
+        "plainTextFormattedCitation": `[REF ${all_pmids.length > 0 ? part.value : part_id}]`
     },
     "properties": {
         "noteIndex": 0
@@ -238,7 +269,7 @@ const cslCitationModule = {
     let csl_json = JSON.stringify(csl_dat);
     // csl_json = '<EndNote><Cite><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></Cite></EndNote>'.replace(/</g,'&lt;').replace(/>/g,'&gt;');
     // FIELDCODE='EN.CITE'
-    value = `<w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText xml:space="preserve"> ADDIN ${FIELDCODE} ${csl_json}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r>`;
+    value = `<w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText xml:space="preserve">ADDIN ${FIELDCODE} ${csl_json}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r>`;
     return { value };
   }
 };
