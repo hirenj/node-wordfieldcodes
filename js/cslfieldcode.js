@@ -60,7 +60,6 @@ const sync_csl = function(values,callback) {
 
 const generate_csl_from_template = async function(values) {
   let all_ids = [];
-  console.log(values);
   for (let {id,lookup} of values) {
     if (lookup) {
       all_ids.push(new DOI(lookup,id));
@@ -103,8 +102,6 @@ const generate_csl_from_template = async function(values) {
       "uris" : [ `http://www.mendeley.com/documents/?uuid=${part_id}` ]
     };
   }));
-
-  console.log(citationItems);
 
   const formatted = all_ids.map( ref => ref.identifier ).join(',');
   const csl_dat = {
@@ -202,7 +199,6 @@ const cslCitationModule = {
   prefix: PREFIX,
   parse(placeHolderContent) {
     const type = "placeholder";
-    console.log(placeHolderContent.trim());
     return { type, value: placeHolderContent.trim(), module: moduleName };
   },
   postparse(postparsed,options) {
@@ -279,20 +275,17 @@ const cslCitationModule = {
     let csl;
 
     if (part.value instanceof CslData) {
-      csl = part.value;
+      csl = part.value.data;
     } else {
       const all_ids = part.value.split(',').map( id => id.replace(/\s+/g,'_').toLowerCase());
       let values = all_ids.map( id => {
         let lookup = options.scopeManager.getValue(id, { part });
         return { id, lookup };
       });
-      console.log('Waiting for values');
       csl = sync_csl(values);
-      console.log('Out here');
-      console.log('Got values');
     }
 
-    let citation_text = 'SOMETEXT';
+    let citation_text = csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'');
 
     if (! csl ) {
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r>` };
