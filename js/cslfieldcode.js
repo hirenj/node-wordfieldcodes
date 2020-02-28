@@ -236,7 +236,8 @@ const cslCitationModule = {
       }
       let field_start = find_run_start(postparsed,field);
       let field_end = find_run_end(postparsed,field);
-      let whole_value = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)).map( item => item.value ).join('');
+      let whole_value = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)).filter( item => item.tag !== 'w:r' ).map( item => item.value ).join('');
+      whole_value = whole_value.replace(/xml\:space="preserve"/g,'').replace( /<\/?w\:instrText\s*>/g,'');
       let json_part = whole_value.match(/ADDIN CSL_CITATION\s*([^<]+)/);
       if( ! json_part) {
         continue;
@@ -276,6 +277,15 @@ const cslCitationModule = {
 
     if (part.value instanceof CslData) {
       csl = part.value.data;
+      for (let i = 0; i < csl.citationItems.length; i++) {
+        let an_item = csl.citationItems[i];
+        if (an_item.id.match(/^NICKNAME/)) {
+          let id = an_item.id.replace(/^NICKNAME/,'');
+          let lookup = options.scopeManager.getValue(id, { part });
+          let value = { id , lookup };
+          csl.citationItems[i] = sync_csl([ value ]).citationItems[0];
+        }
+      }
     } else {
       const all_ids = part.value.split(',').map( id => id.replace(/\s+/g,'_').toLowerCase());
       let values = all_ids.map( id => {
