@@ -285,15 +285,16 @@ const cslCitationModule = {
       csl = sync_csl(values);
     }
 
-    let citation_text = csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'');
-
     if (! csl ) {
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r>` };
     }
 
+    let citation_text = csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'');
+
     let codeid = FIELDCODE+(new Date().getTime());
 
-    let csl_json = JSON.stringify(csl);
+    let csl_json = JSON.stringify(csl).replace(/&/g,'');
+
     // csl_json = '<EndNote><Cite><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></Cite></EndNote>'.replace(/</g,'&lt;').replace(/>/g,'&gt;');
     // FIELDCODE='EN.CITE'
     value = `<w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText xml:space="preserve">ADDIN ${FIELDCODE} ${csl_json}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${citation_text}]</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r>`;
