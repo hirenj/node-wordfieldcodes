@@ -58,11 +58,20 @@ const sync_csl = function(values,callback) {
   return csl;
 };
 
+const get_entry_obj = (key,id) => {
+  if (key.indexOf('DOI:') === 0) {
+    return new DOI(key.replace('DOI:','').trim(),id);
+  }
+  if (key.indexOf('PMID:') === 0) {
+    return new PMID(key.replace('PMID:','').trim(),id);
+  }
+};
+
 const generate_csl_from_template = async function(values) {
   let all_ids = [];
   for (let {id,lookup} of values) {
     if (lookup) {
-      all_ids.push(new DOI(lookup,id));
+      all_ids.push(get_entry_obj(lookup,id));
       continue;
     }
     let re = /PMID[:_][_\s]*(\d+)/gi;
@@ -193,6 +202,27 @@ const find_tables = (postparsed) => {
   return tables;
 };
 
+const parse_pmid = (pmid) => {
+  let re = /PMID[:_][_\s]*(\d+)/gi;
+  let matchval;
+  let a_pmid;
+  while (matchval = re.exec(pmid)) {
+    a_pmid = matchval[1];
+  }
+  if ( a_pmid ) {
+    return { key: pmid.replace(/PMID\:.*/,''), pmidval: a_pmid };
+  }
+};
+
+const find_pmids = (placeholders) => {
+  let all_pmids = [].concat.apply([],placeholders.filter( bit => bit.value.match(/PMID/) ).map( bit => bit.value.split(',').map( v => v.trim() ) ));
+  let results = [];
+  for (let pmid of all_pmids) {
+    let {key,pmidval} = parse_pmid(pmid);
+    results.push( { reference: key.trim(), pmid: pmidval } );
+  }
+  return results;
+};
 
 const cslCitationModule = {
   name: "CslCitationModule",
@@ -207,6 +237,8 @@ const cslCitationModule = {
     this.tables = find_tables(postparsed);
 
     let placeholders = postparsed.filter( bit => bit.type === 'placeholder' && bit.module === moduleName);
+
+    this.tables = this.tables.concat(  [ find_pmids(placeholders) ] );
 
     for (let placeholder of placeholders) {
       postparsed.splice( postparsed.indexOf(placeholder), 0, { type: 'tag',
@@ -247,8 +279,6 @@ const cslCitationModule = {
         if (! item.id.match(/^NICKNAME/)) {
           continue;
         }
-        if (item.itemData.DOI) {
-        }
       }
       let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
@@ -267,7 +297,7 @@ const cslCitationModule = {
     if (this.tables && this.tables.length > 0) {
       for (let table of this.tables.filter( table => table.length > 0)) {
         if (table[0].reference && (table[0].doi || table[0].pmid)) {
-          options.scopeManager.scopeList.push( table.reduce((curr,row) => { curr[row.reference.toLowerCase()] = row.doi || row.pmid; return curr; } ,{}) );
+          options.scopeManager.scopeList.push( table.reduce((curr,row) => { curr[row.reference.toLowerCase()] =  row.pmid ? `PMID:${row.pmid}` : `DOI:${row.doi}`; return curr; } ,{}) );
         }
       }
     }
