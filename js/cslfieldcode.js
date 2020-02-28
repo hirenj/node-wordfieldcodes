@@ -3,6 +3,123 @@ const moduleName = "cslcitation";
 const FIELDCODE = 'CSL_CITATION';
 const PREFIX = '';
 
+const fetch = require('node-fetch');
+const deasync = require('deasync');
+
+class CslData {
+  constructor(data) {
+    this.data = data;
+  }
+}
+
+class DOI {
+  constructor(value,identifier) {
+    this.value = value;
+    this.identifier = identifier;
+  }
+}
+
+class PMID {
+  constructor(value,identifier) {
+    this.value = value;
+    this.identifier = identifier;
+  }
+}
+
+const retrieve_csl_for_doi = async (doi) => {
+  let crossref_data = await fetch(`https://dx.doi.org/${doi}`, { headers: { 'Accept': 'application/citeproc+json' } }).then( res => res.json() );
+  delete crossref_data.license;
+  delete crossref_data.reference;
+  return crossref_data;
+};
+
+const retrieve_csl_for_pmid = async (pmid) => {
+  let pmid_data = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`).then( res => res.json() );
+  let doi = pmid_data.result[pmid].articleids.filter( anid => anid.idtype == 'doi' ).map( id => id.value )[0];
+  if ( doi ) {
+    let csl = retrieve_csl_for_doi(doi);
+    csl.PMID = pmid;
+    return csl;
+  }
+  return;
+};
+
+const sync_csl = function(values,callback) {
+  let csl;
+  let done = false;
+  generate_csl_from_template(values).then( (retval) => {
+    csl = retval;
+    done = true;
+  }).catch( err => {
+    done = true;
+    throw err;
+  });
+  deasync.loopWhile( () => ! done );
+  return csl;
+};
+
+const generate_csl_from_template = async function(values) {
+  let all_ids = [];
+  for (let {id,lookup} of values) {
+    if (lookup) {
+      all_ids.push(new DOI(lookup,id));
+      continue;
+    }
+    let re = /PMID[:_][_\s]*(\d+)/gi;
+    let matchval;
+    while (matchval = re.exec(id)) {
+      let a_pmid = matchval[1];
+      all_ids.push(new PMID(a_pmid,`PMID:${a_pmid}`));
+    }
+  }
+
+  let citationItems = await Promise.all(all_ids.filter( val => val ).map( async (reference) => {
+    let part_id = reference.identifier.replace(/[\s:]+/g,'_').toLowerCase();
+    let csl = {
+        "ID" :"NICKNAME"+part_id,
+        "author": [
+            {
+                "dropping-particle": "",
+                "family": part_id,
+                "given": "",
+                "non-dropping-particle": "",
+                "parse-names": false,
+                "suffix": ""
+            }]
+      };
+    if (reference instanceof DOI) {
+      csl = await retrieve_csl_for_doi(reference.value);
+      csl.ID = 'NICKNAME'+part_id;
+    }
+    if (reference instanceof PMID) {
+      csl = await retrieve_csl_for_pmid(reference.value);
+      csl.ID = 'NICKNAME'+part_id;
+    }
+
+    return {
+      "id": "NICKNAME"+part_id,
+      "itemData": csl,
+      "uris" : [ `http://www.mendeley.com/documents/?uuid=${part_id}` ]
+    };
+  }));
+
+  const formatted = all_ids.map( ref => ref.identifier ).join(',');
+  const csl_dat = {
+    citationItems,
+    "mendeley": {
+        "formattedCitation": `[REF ${formatted}]`,
+        "plainTextFormattedCitation": `[REF ${formatted}]`
+    },
+    "properties": {
+        "noteIndex": 0
+    },
+    "schema": "https://github.com/citation-style-language/schema/raw/master/csl-citation.json"
+  };
+
+  return csl_dat;
+
+};
+
 const find_run_start = (elements,start_el) => {
   let previous = elements.slice(0,elements.indexOf(start_el)).reverse();
   let tag = previous.filter( tag => tag.value && (typeof tag.value == 'string') && tag.value.indexOf('w:fldCharType="begin"') >= 0 )[0];
@@ -82,7 +199,6 @@ const cslCitationModule = {
   prefix: PREFIX,
   parse(placeHolderContent) {
     const type = "placeholder";
-    console.log(placeHolderContent.trim());
     return { type, value: placeHolderContent.trim(), module: moduleName };
   },
   postparse(postparsed,options) {
@@ -120,48 +236,23 @@ const cslCitationModule = {
       }
       let field_start = find_run_start(postparsed,field);
       let field_end = find_run_end(postparsed,field);
-      let code_matcher = new RegExp(`id":"NICKNAME([^"]+)"`);
-      let valuetext = field.value.match(code_matcher);
-      let doi_matcher = new RegExp('DOI":"([^"]+)"');
-      if ( ! valuetext ) {
-        let doi_match = field.value.match(doi_matcher);
-        if (doi_match) {
-          valuetext = [null,{ DOI: doi_match[1] }];
-        }
-        let uuid_match = field.value.match(/uuid=([a-z0-9\-]+)"/g);
-        if (uuid_match) {
-          valuetext[1].uuid = uuid_match.map( match => match.replace('"',''));
-        }
-      } else {
-        valuetext = [ null, { nickname: valuetext[1] }]
-        let uuid_match = field.value.match(/uuid=([a-z0-9\-]+)"/g);
-        if (uuid_match) {
-          valuetext[1].uuid = uuid_match.map( match => match.replace('"',''));
-        }
-      }
-      if ( ! valuetext ) {
-        postparsed.splice(postparsed.indexOf(field),1);
+      let whole_value = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)).filter( item => item.tag !== 'w:r' ).map( item => item.value ).join('');
+      whole_value = whole_value.replace(/xml\:space="preserve"/g,'').replace( /<\/?w\:instrText\s*>/g,'');
+      let json_part = whole_value.match(/ADDIN CSL_CITATION\s*([^<]+)/);
+      if( ! json_part) {
         continue;
       }
-      let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
-      let removed_field_codes = removed.filter( bit => bit.type === 'content' && bit.value.indexOf(FIELDCODE) >= 0 );
-      if (removed_field_codes.length > 1 || removed_field_codes[0] !== field) {
-        removed_field_codes.filter( bit => bit !== field ).forEach( fld => {
-          if (fld.value === field.value) {
-            fld.removed = true;
-          }
-        });
-        if (removed_field_codes.filter( bit => bit !== field && ! bit.removed ).length > 0) {
-          console.log('Removing ',field, postparsed.indexOf(field_start), postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1);
-          console.log(removed.slice(0,40));
-          console.log('********------***********');
-          console.log(postparsed.indexOf(field));
-          console.log(postparsed.slice( postparsed.indexOf(field) - 20, postparsed.indexOf(field) + 20 ));
-          throw new Error('Removing too much');
+      let csl = new CslData(JSON.parse(json_part[1]));
+      for (let item of csl.data.citationItems) {
+        if (! item.id.match(/^NICKNAME/)) {
+          continue;
+        }
+        if (item.itemData.DOI) {
         }
       }
+      let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
-        value: valuetext[1],
+        value: csl,
         type: 'placeholder',
         module: moduleName
       });
@@ -182,63 +273,41 @@ const cslCitationModule = {
     }
 
     let uuid = null;
-    if (typeof part.value !== 'string') {
-      uuid = part.value.uuid;
-      if ( part.value.nickname ) {
-        part.value = part.value.nickname;
-      }
-      Object.keys(options.scopeManager.scopeList[0]).forEach(function(key) {
-        let value = options.scopeManager.scopeList[0][key];
-        if (value === part.value.DOI) {
-          part.value = key;
-        }
-      });
-    }
-    let part_id = part.value.replace(/\s+/g,'_').toLowerCase();
-    let value = options.scopeManager.getValue(part_id, { part });
+    let csl;
 
-    if (value == null) {
-      value = options.nullGetter(part);
+    if (part.value instanceof CslData) {
+      csl = part.value.data;
+      for (let i = 0; i < csl.citationItems.length; i++) {
+        let an_item = csl.citationItems[i];
+        if (an_item.id.match(/^NICKNAME/)) {
+          let id = an_item.id.replace(/^NICKNAME/,'');
+          let lookup = options.scopeManager.getValue(id, { part });
+          let value = { id , lookup };
+          csl.citationItems[i] = sync_csl([ value ]).citationItems[0];
+        }
+      }
+    } else {
+      const all_ids = part.value.split(',').map( id => id.replace(/\s+/g,'_').toLowerCase());
+      let values = all_ids.map( id => {
+        let lookup = options.scopeManager.getValue(id, { part });
+        return { id, lookup };
+      });
+      csl = sync_csl(values);
     }
-    if (!value) {
+
+    if (! csl ) {
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r>` };
     }
-    let codeid= FIELDCODE+(new Date().getTime());
-    const csl = {
-      "DOI": value || "1.2.3/abc",
-      "ID" :"NICKNAME"+part_id,
-      "author": [
-          {
-              "dropping-particle": "",
-              "family": part_id,
-              "given": "",
-              "non-dropping-particle": "",
-              "parse-names": false,
-              "suffix": ""
-          }]
 
-    };
-    const csl_dat = { "citationItems": [{
-      "id": "NICKNAME"+part_id,
-      "itemData": csl,
-      "uris" : [ `http://www.mendeley.com/documents/?uuid=${part_id}` ]
-    }],
-    "mendeley": {
-        "formattedCitation": `[REF ${part_id}]`,
-        "plainTextFormattedCitation": `[REF ${part_id}]`
-    },
-    "properties": {
-        "noteIndex": 0
-    },
-    "schema": "https://github.com/citation-style-language/schema/raw/master/csl-citation.json"
-    };
-    if ( uuid ) {
-      csl_dat.citationItems[0].uris = [...new Set([`http://www.mendeley.com/documents/?uuid=${part_id}` ].concat( uuid.map( id => `http://www.mendeley.com/documents/?${id}` ) ))];
-    }
-    let csl_json = JSON.stringify(csl_dat);
+    let citation_text = csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'');
+
+    let codeid = FIELDCODE+(new Date().getTime());
+
+    let csl_json = JSON.stringify(csl).replace(/&/g,'');
+
     // csl_json = '<EndNote><Cite><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></Cite></EndNote>'.replace(/</g,'&lt;').replace(/>/g,'&gt;');
     // FIELDCODE='EN.CITE'
-    value = `<w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText xml:space="preserve"> ADDIN ${FIELDCODE} ${csl_json}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r>`;
+    value = `<w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText xml:space="preserve">ADDIN ${FIELDCODE} ${csl_json}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${citation_text}]</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r>`;
     return { value };
   }
 };
