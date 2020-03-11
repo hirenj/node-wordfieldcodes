@@ -26,15 +26,24 @@ class PMID {
   }
 }
 
+const cached_results_doi = [];
+
+
 const retrieve_csl_for_doi = async (doi) => {
-  let crossref_data = await fetch(`https://dx.doi.org/${doi}`, { headers: { 'Accept': 'application/citeproc+json' } }).then( res => res.json() );
+  let crossref_data = cached_results_doi[doi] ? cached_results_doi[doi] : await fetch(`https://dx.doi.org/${doi}`, { headers: { 'Accept': 'application/citeproc+json' } }).then( res => res.json() );
   delete crossref_data.license;
   delete crossref_data.reference;
+  cached_results_doi[doi] = crossref_data;
   return crossref_data;
 };
 
+const cached_results_pmid = [];
+
 const retrieve_csl_for_pmid = async (pmid) => {
-  let pmid_data = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`).then( res => res.json() );
+  let pmid_data = cached_results_pmid[pmid] ? cached_results_pmid[pmid] : await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`).then( res => res.json() );
+  if (pmid_data.result[pmid]) {
+    cached_results_pmid[pmid] = pmid_data;
+  }
   let doi = pmid_data.result[pmid].articleids.filter( anid => anid.idtype == 'doi' ).map( id => id.value )[0];
   if ( doi ) {
     let csl = retrieve_csl_for_doi(doi);
@@ -97,11 +106,17 @@ const generate_csl_from_template = async function(values) {
             }]
       };
     if (reference instanceof DOI) {
+      csl.DOI = reference.value;
       csl = await retrieve_csl_for_doi(reference.value);
       csl.ID = 'NICKNAME'+part_id;
     }
     if (reference instanceof PMID) {
+      csl.PMID = reference.value;
       csl = await retrieve_csl_for_pmid(reference.value);
+      if ( ! csl ) {
+        console.log('Trying to retrieve CSL again');
+        csl = await retrieve_csl_for_pmid(reference.value);
+      }
       csl.ID = 'NICKNAME'+part_id;
     }
 
@@ -218,8 +233,11 @@ const find_pmids = (placeholders) => {
   let all_pmids = [].concat.apply([],placeholders.filter( bit => bit.value.match(/PMID/) ).map( bit => bit.value.split(',').map( v => v.trim() ) ));
   let results = [];
   for (let pmid of all_pmids) {
-    let {key,pmidval} = parse_pmid(pmid);
-    results.push( { reference: key.trim(), pmid: pmidval } );
+    let pmid_result = parse_pmid(pmid);
+    if (pmid_result) {
+      let {key,pmidval} = pmid_result;
+      results.push( { reference: key.trim(), pmid: pmidval } );
+    }
   }
   return results;
 };
@@ -325,15 +343,17 @@ const cslCitationModule = {
       csl = sync_csl(values);
     }
 
-    if (! csl ) {
+    if (! csl || csl.citationItems.length < 1) {
+      console.log('Missing ',part.value);
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r>` };
     }
 
     let citation_text = csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'');
 
+
     let codeid = FIELDCODE+(new Date().getTime());
 
-    let csl_json = JSON.stringify(csl).replace(/&/g,'');
+    let csl_json = JSON.stringify(csl).replace(/&/g,'').replace(/[<>]/g,'');
 
     // csl_json = '<EndNote><Cite><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></Cite></EndNote>'.replace(/</g,'&lt;').replace(/>/g,'&gt;');
     // FIELDCODE='EN.CITE'
