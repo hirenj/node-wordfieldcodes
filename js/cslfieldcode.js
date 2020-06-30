@@ -287,12 +287,28 @@ const cslCitationModule = {
       let field_start = find_run_start(postparsed,field);
       let field_end = find_run_end(postparsed,field);
       let whole_value = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)).filter( item => item.tag !== 'w:r' ).map( item => item.value ).join('');
-      whole_value = whole_value.replace(/xml\:space="preserve"/g,'').replace( /<\/?w\:instrText\s*>/g,'');
-      let json_part = whole_value.match(/ADDIN CSL_CITATION\s*([^<]+)/);
+      whole_value = whole_value.replace(/xml\:space="preserve"/g,'');
+      let instr_text_re = /<w:instrText[^>]*>(([^<]|\n)*?)<\/w:instrText>/g;
+      let match;
+      let instr_texts = ""
+      while ((match = instr_text_re.exec(whole_value)) !== null) {
+        instr_texts += match[1]
+      }
+      if (! instr_texts) {
+        continue;
+      }
+      let json_part = instr_texts.match(/ADDIN CSL_CITATION\s*([^<]+)/);
       if( ! json_part) {
         continue;
       }
-      let csl = new CslData(JSON.parse(json_part[1]));
+      let csl;
+      try {
+        csl = new CslData(JSON.parse(json_part[1]));
+      } catch (err) {
+        console.log(instr_texts);
+        console.log(json_part[1])
+        throw err;
+      }
       for (let item of csl.data.citationItems) {
         if (! item.id.match(/^NICKNAME/)) {
           continue;
@@ -349,7 +365,10 @@ const cslCitationModule = {
     }
 
     let citation_text = csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'');
-
+    let super_sub_match;
+    if (super_sub_match = citation_text.match(/&lt;su[pb]&gt;(.*)&lt;\/su[pb]&gt;/)) {
+      citation_text = super_sub_match[1]
+    }
 
     let codeid = FIELDCODE+(new Date().getTime());
 
