@@ -30,24 +30,57 @@ const cached_results_doi = [];
 
 
 const retrieve_csl_for_doi = async (doi) => {
-  let crossref_data = cached_results_doi[doi] ? cached_results_doi[doi] : await fetch(`https://dx.doi.org/${doi}`, { headers: { 'Accept': 'application/citeproc+json' } }).then( res => res.json() );
+  let crossref_data;
+  try {
+    crossref_data = cached_results_doi[doi] ? cached_results_doi[doi] : await fetch(`https://dx.doi.org/${doi}`, { headers: { 'Accept': 'application/citeproc+json' } }).then( res => res.json() );
+  } catch (err) {
+    if (err.type == 'invalid-json') {
+      crossref_data = { "DOI" : doi };
+    } else {
+      throw err;
+    }
+  }
   delete crossref_data.license;
   delete crossref_data.reference;
+  crossref_data['type'] = 'article-journal';
   cached_results_doi[doi] = crossref_data;
   return crossref_data;
 };
 
 const cached_results_pmid = [];
 
-const retrieve_csl_for_pmid = async (pmid) => {
+const sleep_wait = async (time) => {
+  return new Promise( resolve => {
+    setTimeout(resolve,time);
+  });
+};
+
+
+const retrieve_csl_for_pmid = async (pmid,tries=2) => {
+  console.log(`Retrieving CSL for ${pmid}`);
   let pmid_data = cached_results_pmid[pmid] ? cached_results_pmid[pmid] : await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`).then( res => res.json() );
+  if ( ! pmid_data || ! ('result' in pmid_data) || ! (pmid in pmid_data.result) ) {
+    if (tries > 0) {
+      await sleep_wait(500);
+      console.log(`Trying to retrieve again for PMID ${pmid}`);
+      return await retrieve_csl_for_pmid(pmid,tries-1);
+    } else {
+      console.log(`Failed to retrieve data from eutils for PMID ${pmid}`);
+      return;
+    }
+  }
   if (pmid_data.result[pmid]) {
     cached_results_pmid[pmid] = pmid_data;
   }
   let doi = pmid_data.result[pmid].articleids.filter( anid => anid.idtype == 'doi' ).map( id => id.value )[0];
   if ( doi ) {
     let csl = retrieve_csl_for_doi(doi);
+    if ( ! ('authors' in csl) ) {
+      delete csl.DOI;
+      console.log(JSON.stringify(csl));
+    }
     csl.PMID = pmid;
+    console.log(`Done for PMID ${pmid}`);
     return csl;
   }
   return;
@@ -93,7 +126,7 @@ const generate_csl_from_template = async function(values) {
 
   let citationItems = await Promise.all(all_ids.filter( val => val ).map( async (reference) => {
     let part_id = reference.identifier.replace(/[\s:]+/g,'_').toLowerCase();
-    let csl = {
+    let ref_csl = {
         "ID" :"NICKNAME"+part_id,
         "author": [
             {
@@ -105,18 +138,29 @@ const generate_csl_from_template = async function(values) {
                 "suffix": ""
             }]
       };
+    let csl = ref_csl;
     if (reference instanceof DOI) {
       csl.DOI = reference.value;
+      let doi_val = reference.value;
+      doi_val = doi_val.replace('.*doi.org\/','');
       csl = await retrieve_csl_for_doi(reference.value);
       csl.ID = 'NICKNAME'+part_id;
     }
     if (reference instanceof PMID) {
       csl.PMID = reference.value;
       csl = await retrieve_csl_for_pmid(reference.value);
-      if ( ! csl ) {
+      let tries = 3;
+      while ( ! csl ) {
+        if ( tries == 0) {
+          csl = ref_csl;
+          break;
+        }
         console.log('Trying to retrieve CSL again');
+        await sleep_wait(500);
         csl = await retrieve_csl_for_pmid(reference.value);
+        tries = tries - 1;
       }
+      csl.PMID = reference.value;
       csl.ID = 'NICKNAME'+part_id;
     }
 
@@ -126,6 +170,7 @@ const generate_csl_from_template = async function(values) {
       "uris" : [ `http://www.mendeley.com/documents/?uuid=${part_id}` ]
     };
   }));
+  citationItems = citationItems.filter( item => item );
 
   const formatted = all_ids.map( ref => ref.identifier ).join(',');
   const csl_dat = {
