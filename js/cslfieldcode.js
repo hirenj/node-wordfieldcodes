@@ -42,7 +42,9 @@ const retrieve_csl_for_doi = async (doi) => {
   }
   delete crossref_data.license;
   delete crossref_data.reference;
-  crossref_data['type'] = 'article-journal';
+  if ((crossref_data['type'] || '').indexOf('article') >= 0) {
+    crossref_data['type'] = 'article-journal';
+  }
   cached_results_doi[doi] = crossref_data;
   return crossref_data;
 };
@@ -116,12 +118,19 @@ const generate_csl_from_template = async function(values) {
       all_ids.push(get_entry_obj(lookup,id));
       continue;
     }
-    let re = /PMID[:_][_\s]*(\d+)/gi;
+    let re = /PMID\s*[:_][_\s]*(\d+)/gi;
     let matchval;
     while (matchval = re.exec(id)) {
       let a_pmid = matchval[1];
       all_ids.push(new PMID(a_pmid,`PMID:${a_pmid}`));
     }
+    re = /DOI\s*[:_][_\s]*(.+)/gi;
+    matchval;
+    while (matchval = re.exec(id)) {
+      let a_doi = matchval[1];
+      all_ids.push(new DOI(a_doi,`DOI:${a_doi}`));
+    }
+
   }
 
   let citationItems = await Promise.all(all_ids.filter( val => val ).map( async (reference) => {
