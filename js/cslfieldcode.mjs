@@ -3,8 +3,7 @@ const moduleName = "cslcitation";
 const FIELDCODE = 'CSL_CITATION';
 const PREFIX = '';
 
-const fetch = require('node-fetch');
-const deasync = require('deasync');
+import deasync from 'deasync';
 
 class CslData {
   constructor(data) {
@@ -98,7 +97,7 @@ const sync_csl = function(values,callback) {
     done = true;
     throw err;
   });
-  deasync.loopWhile( () => ! done );
+  deasync.loopWhile( () => { console.log("waiting"); return ! done });
   return csl;
 };
 
@@ -132,7 +131,7 @@ const generate_csl_from_template = async function(values) {
     }
 
   }
-
+  console.log("HERE")
   let citationItems = await Promise.all(all_ids.filter( val => val ).map( async (reference) => {
     let part_id = reference.identifier.replace(/[\s:]+/g,'_').toLowerCase();
     let ref_csl = {
@@ -157,7 +156,9 @@ const generate_csl_from_template = async function(values) {
     }
     if (reference instanceof PMID) {
       csl.PMID = reference.value;
+      console.log("Getting CSL")
       csl = await retrieve_csl_for_pmid(reference.value);
+      console.log(csl);
       let tries = 3;
       while ( ! csl ) {
         if ( tries == 0) {
@@ -193,6 +194,8 @@ const generate_csl_from_template = async function(values) {
     },
     "schema": "https://github.com/citation-style-language/schema/raw/master/csl-citation.json"
   };
+
+  console.log("REturning CSL DAT")
 
   return csl_dat;
 
@@ -435,4 +438,4 @@ const cslCitationModule = {
   }
 };
 
-module.exports = cslCitationModule;
+export default cslCitationModule;

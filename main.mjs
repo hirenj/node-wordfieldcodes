@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
-const JSZip = require('jszip');
-const Docxtemplater = require('docxtemplater');
+import PizZip from 'pizzip';
 
-const path = require('path');
+import Docxtemplater from 'docxtemplater';
 
-const fs = require('fs');
+import path from 'path';
+
+import fs from 'fs';
 
 
-var fieldcode = require('./js/fieldcode');
+import fieldcode from './js/fieldcode.mjs';
 
 //Load the docx file as a binary
 const content = fs
@@ -25,14 +26,13 @@ if ( process.argv[3] ) {
     readonly = true;
 }
 
-const zip = await JSZip.loadAsync(data);
+const zip = new PizZip(content);
 
 const doc = new Docxtemplater();
 doc.attachModule(fieldcode);
 doc.loadZip(zip);
 
 doc.setData(data);
-
 
 try {
     // render the document (replace all occurences of {first_name} by John, {last_name} by Doe, ...)
