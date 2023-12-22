@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-const JSZip = require('jszip');
-const Docxtemplater = require('docxtemplater');
+import PizZip from 'pizzip';
 
-const path = require('path');
+import Docxtemplater from 'docxtemplater';
 
-const fs = require('fs');
+import path from 'path';
 
+import fs from 'fs';
 
-var fieldcode = require('./js/cslfieldcode');
+import fieldcode from './js/cslfieldcode.mjs';
 
 fieldcode.writer = null;
 fieldcode.writer = 'csl';
@@ -22,7 +22,7 @@ const rawdata = process.argv[3] ? fs.readFileSync(path.resolve(process.cwd(), pr
 
 const data = rawdata ? JSON.parse(rawdata) : {};
 
-const zip = new JSZip(content);
+const zip = new PizZip(content);
 
 // Auto-fix malformed tag variants: [PMID:..], [ DOI:..], (PMID:..), (DOI:..), etc. → [REF PMID:..] / [REF DOI:..]
 // Excludes '<' from content match to avoid spanning across XML element boundaries.
@@ -60,8 +60,7 @@ doc.setData(objectKeysToLowerCase(data));
 
 
 try {
-    // render the document (replace all occurences of {first_name} by John, {last_name} by Doe, ...)
-    doc.render()
+    await doc.renderAsync();
 }
 catch (error) {
     const errors = error.properties && error.properties.errors
