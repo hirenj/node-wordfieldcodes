@@ -6,6 +6,15 @@ const PREFIX = '';
 const fetch = require('node-fetch');
 const deasync = require('deasync');
 
+var cleanup = require('./cleanup').Cleanup(jsonWrite);
+
+const fs = require('fs');
+const cached_results_doi = JSON.parse(fs.readFileSync('./cached_data.json', 'utf8'));
+
+function jsonWrite() {
+  fs.writeFileSync('./cached_data.json', JSON.stringify(cached_results_doi), 'utf8');
+}
+
 class CslData {
   constructor(data) {
     this.data = data;
@@ -26,16 +35,27 @@ class PMID {
   }
 }
 
-const cached_results_doi = [];
-
+const just_seen_error = {};
 
 const retrieve_csl_for_doi = async (doi) => {
   let crossref_data;
+  if ( ! just_seen_error[doi] && cached_results_doi[doi] && cached_results_doi[doi].error ) {
+    delete cached_results_doi[doi];
+  }
   try {
-    crossref_data = cached_results_doi[doi] ? cached_results_doi[doi] : await fetch(`https://dx.doi.org/${doi}`, { headers: { 'Accept': 'application/citeproc+json' } }).then( res => res.json() );
+    if (cached_results_doi[doi]) {
+      crossref_data = cached_results_doi[doi];  
+    } else {
+      console.log(`Fetching fresh CSL for ${doi}`);
+      let clean_doi = doi;
+      if (clean_doi.indexOf('https://doi.org/') == 0) {
+        clean_doi = clean_doi.replace('https://doi.org/','');
+      }
+      crossref_data = await fetch(`https://dx.doi.org/${clean_doi}`, { headers: { 'Accept': 'application/citeproc+json' } }).then( res => res.json() );
+    }
   } catch (err) {
     if (err.type == 'invalid-json') {
-      crossref_data = { "DOI" : doi };
+      crossref_data = { "DOI" : doi, "error" : true };
     } else {
       throw err;
     }
@@ -46,6 +66,9 @@ const retrieve_csl_for_doi = async (doi) => {
     crossref_data['type'] = 'article-journal';
   }
   cached_results_doi[doi] = crossref_data;
+  if (! crossref_data['type']) {
+    just_seen_error[doi] = true;
+  }
   return crossref_data;
 };
 
@@ -57,9 +80,7 @@ const sleep_wait = async (time) => {
   });
 };
 
-
-const retrieve_csl_for_pmid = async (pmid,tries=2) => {
-  console.log(`Retrieving CSL for ${pmid}`);
+const fetch_pmid_doi_data = async (pmid) => {
   let pmid_data = cached_results_pmid[pmid] ? cached_results_pmid[pmid] : await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`).then( res => res.json() );
   if ( ! pmid_data || ! ('result' in pmid_data) || ! (pmid in pmid_data.result) ) {
     if (tries > 0) {
@@ -75,11 +96,26 @@ const retrieve_csl_for_pmid = async (pmid,tries=2) => {
     cached_results_pmid[pmid] = pmid_data;
   }
   let doi = pmid_data.result[pmid].articleids.filter( anid => anid.idtype == 'doi' ).map( id => id.value )[0];
+  return doi;
+}
+
+const retrieve_csl_for_pmid = async (pmid,tries=2) => {
+  let doi = require('./lookup_ids').search_by_pmid(pmid);
+  if ( ! doi ) {
+    console.log(`Retrieving CSL for ${pmid}`);
+    doi = await fetch_pmid_doi_data(pmid);
+  } else {
+    console.log(`Using library DOI for ${pmid}`);
+    doi = doi.DOI;
+  }
+  console.log(`"${pmid}" maps to "${doi}"`);
   if ( doi ) {
+    if (doi.indexOf('http') < 0) {
+      doi = `https://doi.org/${doi}`;
+    }
     let csl = retrieve_csl_for_doi(doi);
     if ( ! ('authors' in csl) ) {
       delete csl.DOI;
-      console.log(JSON.stringify(csl));
     }
     csl.PMID = pmid;
     console.log(`Done for PMID ${pmid}`);
@@ -296,6 +332,8 @@ const find_pmids = (placeholders) => {
   return results;
 };
 
+const document_doi_cache = {};
+
 const cslCitationModule = {
   name: "CslCitationModule",
   prefix: PREFIX,
@@ -351,7 +389,8 @@ const cslCitationModule = {
       if (! instr_texts) {
         continue;
       }
-      let json_part = instr_texts.match(/ADDIN CSL_CITATION\s*([^<]+)/);
+      let json_part = instr_texts.match(/ADDIN (?:ZOTERO_ITEM )?CSL_CITATION\s*([^<]+)/);
+
       if( ! json_part) {
         continue;
       }
@@ -363,11 +402,18 @@ const cslCitationModule = {
         console.log(json_part[1])
         throw err;
       }
-      for (let item of csl.data.citationItems) {
-        if (! item.id.match(/^NICKNAME/)) {
-          continue;
+      csl.data.citationItems = csl.data.citationItems.map( (item) => {
+        if (item.itemData.DOI) {
+          if (document_doi_cache[item.itemData.DOI]) {
+            console.log(`Removing duplicate entry for ${item.itemData.DOI}`);
+          } else {
+            document_doi_cache[item.itemData.DOI] = item;
+          }
+          return document_doi_cache[item.itemData.DOI];
         }
-      }
+        return item;
+      }); 
+
       let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
         value: csl,
@@ -397,8 +443,8 @@ const cslCitationModule = {
       csl = part.value.data;
       for (let i = 0; i < csl.citationItems.length; i++) {
         let an_item = csl.citationItems[i];
-        if (an_item.id.match(/^NICKNAME/)) {
-          let id = an_item.id.replace(/^NICKNAME/,'');
+        if (an_item.id && (an_item.id+'').match(/^NICKNAME/)) {
+          let id = (an_item.id+'').replace(/^NICKNAME/,'');
           let lookup = options.scopeManager.getValue(id, { part });
           let value = { id , lookup };
           csl.citationItems[i] = sync_csl([ value ]).citationItems[0];
@@ -418,7 +464,31 @@ const cslCitationModule = {
       return { value: `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF ${part.value}]</w:t></w:r>` };
     }
 
-    let citation_text = csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'');
+    let citation_text = csl.mendeley ? csl.mendeley.formattedCitation.replace('[REF ','').replace(/]$/,'') : '';
+
+    let errors = [];
+
+    for (let cslitem of csl.citationItems) {
+      if ( ! cslitem.itemData.PMID && cslitem.itemData.DOI ) {
+        let lookedup_pmid = require('./lookup_ids').search_by_doi(cslitem.itemData.DOI);
+        if (lookedup_pmid) {
+          cslitem.itemData.PMID = lookedup_pmid.PMID;
+        }
+      }
+      if ( ! (cslitem.itemData.PMID || cslitem.itemData.DOI )) {
+        console.log(cslitem.itemData);
+      }
+      if ( ! cslitem.itemData.type ) {
+        if (cslitem.itemData.PMID) {
+          errors.push( `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF PMID:${cslitem.itemData.PMID}]</w:t></w:r>` );
+        } else {
+          errors.push( `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF DOI:${cslitem.itemData.DOI}]</w:t></w:r>` );          
+        }
+      }
+    }
+    csl.citationItems = csl.citationItems.filter( cslitem => cslitem.itemData.type );
+
+    citation_text = csl.citationItems.map( item => item.itemData.PMID ).filter( pm => pm ).map( pm => `PMID:${pm}`).join(', ');
     let super_sub_match;
     if (super_sub_match = citation_text.match(/&lt;su[pb]&gt;(.*)&lt;\/su[pb]&gt;/)) {
       citation_text = super_sub_match[1]
@@ -431,6 +501,7 @@ const cslCitationModule = {
     // csl_json = '<EndNote><Cite><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></Cite></EndNote>'.replace(/</g,'&lt;').replace(/>/g,'&gt;');
     // FIELDCODE='EN.CITE'
     value = `<w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText xml:space="preserve">ADDIN ${FIELDCODE} ${csl_json}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${citation_text}]</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r>`;
+    value = value + errors.join('');
     return { value };
   }
 };
