@@ -154,13 +154,13 @@ const generate_csl_from_template = async function(values) {
       all_ids.push(get_entry_obj(lookup,id));
       continue;
     }
-    let re = /PMID\s*[:_][_\s]*(\d+)/gi;
+    let re = /PMID\s*[:_]?[_\s]*(\d+)/gi;
     let matchval;
     while (matchval = re.exec(id)) {
       let a_pmid = matchval[1];
       all_ids.push(new PMID(a_pmid,`PMID:${a_pmid}`));
     }
-    re = /DOI\s*[:_][_\s]*(.+)/gi;
+    re = /DOI\s*[:_]?[_\s]*(10.\d{4,9}\/[-._;()\/:A-Z0-9]+)/gi;
     matchval;
     while (matchval = re.exec(id)) {
       let a_doi = matchval[1];
@@ -350,6 +350,9 @@ const cslCitationModule = {
 
     this.tables = this.tables.concat(  [ find_pmids(placeholders) ] );
 
+    // Wrap each placeholder in <w:r><w:t>REF TEXT</w:r></w:t>
+    // Or in the model [ 'w:r', 'w:t', placeholder, '/w:t', '/w:r' ]
+
     for (let placeholder of placeholders) {
       postparsed.splice( postparsed.indexOf(placeholder), 0, { type: 'tag',
        position: 'end',
@@ -370,6 +373,8 @@ const cslCitationModule = {
        value: '<w:t>',
        tag: 'w:t' } );
     }
+
+    // Read existing field codes from the document
 
     let fieldcodes = postparsed.filter( bit => bit.type === 'content' && bit.value.indexOf(FIELDCODE) >= 0);
     for (let field of fieldcodes) {
@@ -440,6 +445,7 @@ const cslCitationModule = {
     let csl;
 
     if (part.value instanceof CslData) {
+      // Replace nicknamed entries on previously entered CSL entries
       csl = part.value.data;
       for (let i = 0; i < csl.citationItems.length; i++) {
         let an_item = csl.citationItems[i];
@@ -451,6 +457,8 @@ const cslCitationModule = {
         }
       }
     } else {
+      // Get all the ids together for a single entry
+      // and look up the CSL
       const all_ids = part.value.split(',').map( id => id.replace(/\s+/g,'_').toLowerCase());
       let values = all_ids.map( id => {
         let lookup = options.scopeManager.getValue(id, { part });
@@ -458,6 +466,8 @@ const cslCitationModule = {
       });
       csl = sync_csl(values);
     }
+
+    // Common formatting code for CSL entries
 
     if (! csl || csl.citationItems.length < 1) {
       console.log('Missing ',part.value);
