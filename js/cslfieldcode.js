@@ -80,7 +80,7 @@ const sleep_wait = async (time) => {
   });
 };
 
-const fetch_pmid_doi_data = async (pmid) => {
+const fetch_pmid_doi_data = async (pmid,tries=1) => {
   let pmid_data = cached_results_pmid[pmid] ? cached_results_pmid[pmid] : await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`).then( res => res.json() );
   if ( ! pmid_data || ! ('result' in pmid_data) || ! (pmid in pmid_data.result) ) {
     if (tries > 0) {
@@ -103,7 +103,7 @@ const retrieve_csl_for_pmid = async (pmid,tries=2) => {
   let doi = require('./lookup_ids').search_by_pmid(pmid);
   if ( ! doi ) {
     console.log(`Retrieving CSL for ${pmid}`);
-    doi = await fetch_pmid_doi_data(pmid);
+    doi = await fetch_pmid_doi_data(pmid,tries);
   } else {
     console.log(`Using library DOI for ${pmid}`);
     doi = doi.DOI;
@@ -207,6 +207,10 @@ const generate_csl_from_template = async function(values) {
       }
       csl.PMID = reference.value;
       csl.ID = 'NICKNAME'+part_id;
+    }
+
+    if (csl.DOI && csl.DOI.indexOf('10.1101') == 0 && ! csl.journalAbbreviation) {
+      csl.journalAbbreviation = 'bioRxiv';
     }
 
     return {
