@@ -10,6 +10,10 @@ const fs = require('fs');
 
 var fieldcode = require('./js/cslfieldcode');
 
+fieldcode.writer = null;
+fieldcode.writer = 'csl';
+fieldcode.writer = 'endnote';
+
 //Load the docx file as a binary
 const content = fs
     .readFileSync( path.resolve(process.cwd(), process.argv[2]), 'binary');

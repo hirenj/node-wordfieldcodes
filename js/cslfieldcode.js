@@ -11,6 +11,8 @@ var cleanup = require('./cleanup').Cleanup(jsonWrite);
 const fs = require('fs');
 const cached_results_doi = JSON.parse(fs.readFileSync('./cached_data.json', 'utf8'));
 
+let recordnumber = 100000;
+
 function jsonWrite() {
   fs.writeFileSync('./cached_data.json', JSON.stringify(cached_results_doi), 'utf8');
 }
@@ -44,7 +46,7 @@ const retrieve_csl_for_doi = async (doi) => {
   }
   try {
     if (cached_results_doi[doi]) {
-      crossref_data = cached_results_doi[doi];  
+      crossref_data = cached_results_doi[doi];
     } else {
       console.log(`Fetching fresh CSL for ${doi}`);
       let clean_doi = doi;
@@ -341,6 +343,7 @@ const document_doi_cache = {};
 const cslCitationModule = {
   name: "CslCitationModule",
   prefix: PREFIX,
+  writer: 'csl',
   parse(placeHolderContent) {
     const type = "placeholder";
     return { type, value: placeHolderContent.trim(), module: moduleName };
@@ -412,6 +415,16 @@ const cslCitationModule = {
         throw err;
       }
       csl.data.citationItems = csl.data.citationItems.map( (item) => {
+        if (! item.itemData.note) {
+          return item;
+        }
+        if (((item.itemData.note.indexOf('PMID') >= 0 && ! item.itemData.PMID)) || ((item.itemData.note.indexOf('DOI') >= 0 && ! item.itemData.DOI)) ) {
+          let note_info = item.itemData.note.match(/((:?DOI|PMID)):\s*([^\s]*)/);
+          item.itemData[note_info[2]] = note_info[3];
+        }
+        return item;
+      });
+      csl.data.citationItems = csl.data.citationItems.map( (item) => {
         if (item.itemData.DOI) {
           if (document_doi_cache[item.itemData.DOI]) {
             console.log(`Removing duplicate entry for ${item.itemData.DOI}`);
@@ -421,7 +434,7 @@ const cslCitationModule = {
           return document_doi_cache[item.itemData.DOI];
         }
         return item;
-      }); 
+      });
 
       let removed = postparsed.slice(postparsed.indexOf(field_start), postparsed.indexOf(field_end)+1);
       postparsed.splice(postparsed.indexOf(field_start),postparsed.indexOf(field_end) - postparsed.indexOf(field_start)+1,{
@@ -496,13 +509,15 @@ const cslCitationModule = {
         if (cslitem.itemData.PMID) {
           errors.push( `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF PMID:${cslitem.itemData.PMID}]</w:t></w:r>` );
         } else {
-          errors.push( `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF DOI:${cslitem.itemData.DOI}]</w:t></w:r>` );          
+          errors.push( `<w:r><w:rPr><w:noProof/><w:highlight w:val="red"/></w:rPr><w:t>[REF DOI:${cslitem.itemData.DOI}]</w:t></w:r>` );
         }
       }
     }
     csl.citationItems = csl.citationItems.filter( cslitem => cslitem.itemData.type );
 
-    citation_text = csl.citationItems.map( item => item.itemData.PMID ).filter( pm => pm ).map( pm => `PMID:${pm}`).join(', ');
+    citation_text = csl.citationItems.map( item => {
+      return { 'pm': item.itemData.PMID, 'doi': item.itemData.DOI }
+    }).filter( ({pm,doi}) => pm || doi ).map( ({pm,doi}) => pm ? `PMID:${pm}` : `DOI:${doi}` ).join(', ');
     let super_sub_match;
     if (super_sub_match = citation_text.match(/&lt;su[pb]&gt;(.*)&lt;\/su[pb]&gt;/)) {
       citation_text = super_sub_match[1]
@@ -510,11 +525,89 @@ const cslCitationModule = {
 
     let codeid = FIELDCODE+(new Date().getTime());
 
-    let csl_json = JSON.stringify(csl).replace(/&/g,'').replace(/[<>]/g,'');
 
-    // csl_json = '<EndNote><Cite><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></Cite></EndNote>'.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    // FIELDCODE='EN.CITE'
-    value = `<w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"begin\" w:fldLock=\"1\"/></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:instrText xml:space="preserve">ADDIN ${FIELDCODE} ${csl_json}</w:instrText></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r w:rsidR=\"${codeid}\" w:rsidRPr=\"${codeid}\"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${citation_text}]</w:t></w:r><w:r w:rsidR=\"${codeid}\"><w:rPr></w:rPr><w:fldChar w:fldCharType=\"end\"/></w:r>`;
+    let addin_text;
+
+    if (this.writer === 'csl') {
+      let csl_json = JSON.stringify(csl).replace(/&/g,'').replace(/[<>]/g,'');
+      addin_text = `ADDIN ${FIELDCODE} ${csl_json}`;
+    }
+
+    if (this.writer == 'endnote') {
+      let endnote_xml = ('<EndNote>'+csl.citationItems.map( item => {
+      let doi_text = '';
+      let pmid_text = '';
+      if (! item.recordnumber ) {
+        item.recordnumber = recordnumber;
+        recordnumber += 1;
+      }
+      if (item.itemData.DOI) {
+        doi_text = `<electronic-resource-num>${item.itemData.DOI}</electronic-resource-num>`;
+        doi_text = doi_text.replace(/\&[lg]t;/g,'');
+      }
+      if (item.itemData.PMID) {
+        pmid_text = `<accession-num>${item.itemData.PMID}</accession-num>
+<urls>
+  <related-urls>
+        <url>https://www.ncbi.nlm.nih.gov/pubmed/${item.itemData.PMID}</url>
+  </related-urls>
+</urls>
+<remote-database-name>Medline</remote-database-name>
+<remote-database-provider>NLM</remote-database-provider>
+`;
+      }
+      return `<Cite>
+<Author>${item.itemData.author[0].family}</Author>
+<Year>${item.itemData.issued ? item.itemData.issued['date-parts'][0][0] : '2025'}</Year>
+<DisplayText>${item.itemData.PMID || item.itemData.DOI}</DisplayText>
+<record>
+      <ref-type name="Journal Article">17</ref-type>
+      <foreign-keys>
+        <key app="EN" db-id="blag">${item.recordnumber}</key>
+      </foreign-keys>
+      <rec-number>${item.recordnumber}</rec-number>
+      <titles><title>${item.itemData.title}</title></titles>
+      <dates>
+        <year>${item.itemData.issued['date-parts'][0][0]}</year>
+      </dates>
+      ${pmid_text}
+      ${doi_text}
+</record>
+</Cite>`;
+      }).join('')+'</EndNote>').replace(/\&[lg]t;/g,'');
+
+      let input_xml = endnote_xml;
+
+      endnote_xml = input_xml.replace(/</g,'&lt;').replace(/>/g,'&gt;');;
+
+      const FIELDCODE_ENDNOTE='EN.CITE';
+
+      addin_text = ` ADDIN ${FIELDCODE_ENDNOTE} ${endnote_xml}`;
+    }
+    if (addin_text) {
+      value = `<w:r w:rsidR="${codeid}">
+              <w:rPr></w:rPr>
+              <w:fldChar w:fldCharType="begin" />
+             </w:r>
+             <w:r w:rsidR="${codeid}">
+              <w:rPr></w:rPr>
+              <w:instrText xml:space="preserve">${addin_text}</w:instrText>
+            </w:r>
+            <w:r w:rsidR="${codeid}">
+              <w:rPr></w:rPr>
+              <w:fldChar w:fldCharType="separate"/>
+            </w:r>
+            <w:r w:rsidR="${codeid}" w:rsidRPr="${codeid}">
+              <w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr>
+              <w:t>[REF ${citation_text}]</w:t>
+            </w:r>
+            <w:r w:rsidR="${codeid}">
+              <w:rPr></w:rPr>
+              <w:fldChar w:fldCharType="end"/>
+            </w:r>`;
+    } else {
+      value = `<w:r><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr><w:t>[REF ${citation_text}]</w:t></w:r>`
+    }
     value = value + errors.join('');
     return { value };
   }
