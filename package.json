@@ -10,7 +10,7 @@
     "better-sqlite3": "^9.2.2",
     "deasync": "^0.1.19",
     "docxtemplater": "^3.15.4",
-    "jszip": "^2.6.1",
+    "jszip": "^3.8.0",
     "node-fetch": "^2.6.0"
   },
   "bin": {
