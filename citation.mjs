@@ -1,28 +1,32 @@
 #!/usr/bin/env node
 
-const JSZip = require('jszip');
-const Docxtemplater = require('docxtemplater');
+import PizZip from 'pizzip';
+import Docxtemplater from 'docxtemplater';
+import path from 'path';
+import fs from 'fs';
 
-const path = require('path');
+// --writer=endnote  outputs EN.CITE field codes instead of CSL_CITATION.
+const writerArg = process.argv.find(a => a.startsWith('--writer='));
+const writer = writerArg ? writerArg.split('=')[1] : 'csl';
 
-const fs = require('fs');
+// Positional args: file.docx [data.json]  (--flags excluded)
+const positional = process.argv.slice(2).filter(a => !a.startsWith('--'));
 
+let fieldcode;
+if (writer === 'endnote') {
+  const mod = await import('./js/endnotefieldcode.mjs');
+  fieldcode = mod.default;
+  fieldcode.mode = 'write';
+} else {
+  const mod = await import('./js/cslfieldcode.mjs');
+  fieldcode = mod.default;
+}
 
-var fieldcode = require('./js/cslfieldcode');
-
-fieldcode.writer = null;
-fieldcode.writer = 'csl';
-//fieldcode.writer = 'endnote';
-
-//Load the docx file as a binary
-const content = fs
-    .readFileSync( path.resolve(process.cwd(), process.argv[2]), 'binary');
-
-const rawdata = process.argv[3] ? fs.readFileSync(path.resolve(process.cwd(), process.argv[3])) : null;
-
+const content = fs.readFileSync(path.resolve(process.cwd(), positional[0]), 'binary');
+const rawdata = positional[1] ? fs.readFileSync(path.resolve(process.cwd(), positional[1])) : null;
 const data = rawdata ? JSON.parse(rawdata) : {};
 
-const zip = new JSZip(content);
+const zip = new PizZip(content);
 
 // Auto-fix malformed tag variants: [PMID:..], [ DOI:..], (PMID:..), (DOI:..), etc. → [REF PMID:..] / [REF DOI:..]
 // Excludes '<' from content match to avoid spanning across XML element boundaries.
@@ -40,28 +44,20 @@ if (totalFixed > 0) {
     process.stderr.write(`Note: auto-fixed ${totalFixed} tag(s) to "[REF ...]" format\n`);
 }
 
-const doc = new Docxtemplater();
-doc.attachModule(fieldcode);
-doc.loadZip(zip).setOptions({delimiters:{start:'[REF',end:']'}});
-
-const objectKeysToLowerCase = function (origObj) {
-    return Object.keys(origObj).reduce(function (newObj, key) {
-        let val = origObj[key];
-        let newVal = (typeof val === 'object') ? objectKeysToLowerCase(val) : val;
-        newObj[key.toLowerCase()] = newVal;
+const objectKeysToLowerCase = (origObj) =>
+    Object.keys(origObj).reduce((newObj, key) => {
+        const val = origObj[key];
+        newObj[key.toLowerCase()] = (typeof val === 'object') ? objectKeysToLowerCase(val) : val;
         return newObj;
     }, {});
-};
 
-doc.setData(objectKeysToLowerCase(data));
-
-// Endnote xml format for a single DOI?
-// ADDIN EN.CITE <xml><records><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></records></xml>
-
+const doc = new Docxtemplater(zip, {
+    modules: [fieldcode],
+    delimiters: { start: '[REF', end: ']' },
+});
 
 try {
-    // render the document (replace all occurences of {first_name} by John, {last_name} by Doe, ...)
-    doc.render()
+    await doc.renderAsync(objectKeysToLowerCase(data));
 }
 catch (error) {
     const errors = error.properties && error.properties.errors
@@ -69,7 +65,7 @@ catch (error) {
         : (error.properties ? [error] : null);
 
     if (errors) {
-        process.stderr.write(`Template error in "${process.argv[2]}":\n\n`);
+        process.stderr.write(`Template error in "${positional[0]}":\n\n`);
         for (const e of errors) {
             const p = e.properties || {};
             process.stderr.write(`  ${p.explanation || e.message}\n`);
@@ -87,8 +83,5 @@ catch (error) {
     process.exit(1);
 }
 
-const buf = doc.getZip()
-             .generate({type: 'nodebuffer'});
-
-// buf is a nodejs buffer, you can either write it to a file or do anything else with it.
-fs.writeFileSync(path.resolve(process.cwd(), process.argv[2]), buf);
+const buf = doc.getZip().generate({ type: 'nodebuffer' });
+fs.writeFileSync(path.resolve(process.cwd(), positional[0]), buf);

@@ -1,62 +1,55 @@
 #!/usr/bin/env node
 
-const JSZip = require('jszip');
+const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
-
 const path = require('path');
-
 const fs = require('fs');
 
+const fieldcode = require('./js/endnotefieldcode');
 
-var fieldcode = require('./js/endnotefieldcode');
+(async () => {
+    const content = fs.readFileSync(path.resolve(process.cwd(), process.argv[2]), 'binary');
+    const rawdata = process.argv[3] ? fs.readFileSync(path.resolve(process.cwd(), process.argv[3])) : null;
+    const data = rawdata ? JSON.parse(rawdata) : {};
 
-//Load the docx file as a binary
-const content = fs
-    .readFileSync( path.resolve(process.cwd(), process.argv[2]), 'binary');
+    const zip = new PizZip(content);
 
-const rawdata = process.argv[3] ? fs.readFileSync(path.resolve(process.cwd(), process.argv[3])) : null;
+    const objectKeysToLowerCase = (origObj) =>
+        Object.keys(origObj).reduce((newObj, key) => {
+            const val = origObj[key];
+            newObj[key.toLowerCase()] = (typeof val === 'object') ? objectKeysToLowerCase(val) : val;
+            return newObj;
+        }, {});
 
-const data = rawdata ? JSON.parse(rawdata) : {};
+    // Delimiters are set to never match so docxtemplater's normal tag parsing
+    // stays out of the way — endnotefieldcode discovers field codes itself in postparse.
+    const doc = new Docxtemplater(zip, {
+        modules: [fieldcode],
+        delimiters: { start: 'BLAHREF', end: 'BLAH' },
+    });
 
-const zip = new JSZip(content);
+    try {
+        await doc.renderAsync(objectKeysToLowerCase(data));
+    } catch (error) {
+        const errors = error.properties && error.properties.errors
+            ? error.properties.errors
+            : (error.properties ? [error] : null);
 
-const doc = new Docxtemplater();
-doc.attachModule(fieldcode);
-doc.loadZip(zip).setOptions({delimiters:{start:'BLAHREF',end:'BLAH'}});
-
-const objectKeysToLowerCase = function (origObj) {
-    return Object.keys(origObj).reduce(function (newObj, key) {
-        let val = origObj[key];
-        let newVal = (typeof val === 'object') ? objectKeysToLowerCase(val) : val;
-        newObj[key.toLowerCase()] = newVal;
-        return newObj;
-    }, {});
-};
-
-doc.setData(objectKeysToLowerCase(data));
-
-// Endnote xml format for a single DOI?
-// ADDIN EN.CITE <xml><records><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></records></xml>
-
-
-try {
-    // render the document (replace all occurences of {first_name} by John, {last_name} by Doe, ...)
-    doc.render()
-}
-catch (error) {
-    let e = {
-        message: error.message,
-        name: error.name,
-        stack: error.stack,
-        properties: error.properties,
+        if (errors) {
+            process.stderr.write(`Template error in "${process.argv[2]}":\n\n`);
+            for (const e of errors) {
+                const p = e.properties || {};
+                process.stderr.write(`  ${p.explanation || e.message}\n`);
+                if (p.context) process.stderr.write(`\n  Context:\n    ...${p.context}\n`);
+                if (p.file)    process.stderr.write(`\n  Location: ${p.file}, offset ${p.offset}\n`);
+                process.stderr.write('\n');
+            }
+        } else {
+            process.stderr.write(`Error: ${error.message}\n`);
+        }
+        process.exit(1);
     }
-    console.log(JSON.stringify({error: e}));
-    // The error thrown here contains additional information when logged with JSON.stringify (it contains a property object).
-    throw error;
-}
 
-const buf = doc.getZip()
-             .generate({type: 'nodebuffer'});
-
-// buf is a nodejs buffer, you can either write it to a file or do anything else with it.
-fs.writeFileSync(path.resolve(process.cwd(), process.argv[2]), buf);
+    const buf = doc.getZip().generate({ type: 'nodebuffer' });
+    fs.writeFileSync(path.resolve(process.cwd(), process.argv[2]), buf);
+})();

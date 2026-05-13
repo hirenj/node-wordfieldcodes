@@ -153,4 +153,4 @@ const fieldCodeModule = {
   }
 };
 
-module.exports = fieldCodeModule;
+export default fieldCodeModule;

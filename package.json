@@ -8,14 +8,13 @@
   },
   "dependencies": {
     "better-sqlite3": "^9.2.2",
-    "deasync": "^0.1.19",
-    "docxtemplater": "^3.15.4",
-    "jszip": "^2.6.1",
-    "node-fetch": "^2.6.0"
+    "docxtemplater": "^3.68.0",
+    "pizzip": "^3.1.4"
   },
   "bin": {
     "wordfieldcode": "main.js",
-    "refmanager": "citation.js"
+    "refmanager": "citation.js",
+    "endnote-convert": "endnote_to_mendeley.mjs"
   },
   "engines" : {
     "node":"18"
