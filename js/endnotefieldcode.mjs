@@ -93,6 +93,19 @@ function render_read(data, part) {
 
 // ── Write mode: CSL_CITATION → EN.CITE ──────────────────────────────────────
 
+// Strip HTML markup, normalise common Unicode typography to ASCII, then drop
+// any remaining non-ASCII bytes.  EndNote's instrText parser is fragile with
+// multi-byte UTF-8 sequences (α, –, curly quotes, etc. all break it).
+const sanitize = (s) => String(s ?? '')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+  .replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+  .replace(/<[^>]*>/g, '')              // strip HTML tags
+  .replace(/[‘’]/g, "'")      // curly single quotes → '
+  .replace(/[“”]/g, '"')      // curly double quotes → "
+  .replace(/[–—]/g, '-')      // en-dash / em-dash → -
+  .replace(/ /g, ' ')             // non-breaking space → space
+  .replace(/[^\x00-\x7F]/g, '');       // drop everything else
+
 let recordnumber = 100000;
 
 function postparse_write(postparsed) {
@@ -161,22 +174,24 @@ function render_write(csl) {
 
   let endnote_xml = '<EndNote>' + csl.citationItems.map(item => {
     if (!item.recordnumber) { item.recordnumber = recordnumber++; }
-    const doi_text  = item.itemData.DOI
-      ? `<electronic-resource-num>${item.itemData.DOI}</electronic-resource-num>`.replace(/&[lg]t;/g, '')
-      : '';
-    const pmid_text = item.itemData.PMID
-      ? `<accession-num>${item.itemData.PMID}</accession-num>` +
-        `<urls><related-urls><url>https://www.ncbi.nlm.nih.gov/pubmed/${item.itemData.PMID}</url></related-urls></urls>` +
+    const pmid   = item.itemData.PMID || '';
+    const doi    = item.itemData.DOI  || '';
+    const year   = String(item.itemData.issued?.['date-parts']?.[0]?.[0] ?? '2025');
+    const author = sanitize(item.itemData.author?.[0]?.family ?? 'Unknown');
+    const title  = sanitize(item.itemData.title ?? '');
+    const display = pmid || doi;
+
+    const doi_text  = doi  ? `<electronic-resource-num>${doi}</electronic-resource-num>` : '';
+    const pmid_text = pmid
+      ? `<accession-num>${pmid}</accession-num>` +
+        `<urls><related-urls><url>https://www.ncbi.nlm.nih.gov/pubmed/${pmid}</url></related-urls></urls>` +
         `<remote-database-name>Medline</remote-database-name>` +
         `<remote-database-provider>NLM</remote-database-provider>`
       : '';
-    const year = item.itemData.issued?.['date-parts']?.[0]?.[0] ?? '2025';
-    const author = item.itemData.author?.[0]?.family ?? 'Unknown';
-    const title  = item.itemData.title ?? '';
-    const display = item.itemData.PMID || item.itemData.DOI || '';
     return `<Cite>
 <Author>${author}</Author>
 <Year>${year}</Year>
+<RecNum>${item.recordnumber}</RecNum>
 <DisplayText>${display}</DisplayText>
 <record>
   <ref-type name="Journal Article">17</ref-type>
@@ -189,17 +204,23 @@ function render_write(csl) {
 </record>
 </Cite>`;
   }).join('') + '</EndNote>';
-  endnote_xml = endnote_xml.replace(/&[lg]t;/g, '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Encode the EN.CITE XML for embedding as an XML text node (instrText).
+  // & must be encoded first to avoid double-encoding the sequences added next.
+  endnote_xml = endnote_xml
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
   const addin_text = ` ADDIN EN.CITE ${endnote_xml}`;
   const citation_text = csl.citationItems
-    .map(item => item.itemData.PMID ? `PMID:${item.itemData.PMID}` : `DOI:${item.itemData.DOI}`)
+    .map(item => item.itemData.PMID ? `PMID:${item.itemData.PMID}` : (item.itemData.DOI ? `DOI:${item.itemData.DOI}` : null))
     .filter(Boolean).join(', ');
-  const codeid = 'EN' + Date.now();
+  const codeid = Math.floor(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, '0').toUpperCase();
 
   return {
     value:
-      `<w:r w:rsidR="${codeid}"><w:rPr></w:rPr><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r w:rsidR="${codeid}"><w:rPr></w:rPr><w:fldChar w:fldCharType="begin" w:fldLock="0" w:dirty="0"/></w:r>` +
       `<w:r w:rsidR="${codeid}"><w:rPr></w:rPr><w:instrText xml:space="preserve">${addin_text}</w:instrText></w:r>` +
       `<w:r w:rsidR="${codeid}"><w:rPr></w:rPr><w:fldChar w:fldCharType="separate"/></w:r>` +
       `<w:r w:rsidR="${codeid}" w:rsidRPr="${codeid}"><w:rPr><w:noProof/><w:highlight w:val="yellow"/></w:rPr>` +
