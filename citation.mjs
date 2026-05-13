@@ -1,25 +1,29 @@
 #!/usr/bin/env node
 
 import PizZip from 'pizzip';
-
 import Docxtemplater from 'docxtemplater';
-
 import path from 'path';
-
 import fs from 'fs';
 
-import fieldcode from './js/cslfieldcode.mjs';
+// --writer=endnote  outputs EN.CITE field codes instead of CSL_CITATION.
+const writerArg = process.argv.find(a => a.startsWith('--writer='));
+const writer = writerArg ? writerArg.split('=')[1] : 'csl';
 
-fieldcode.writer = null;
-fieldcode.writer = 'csl';
-//fieldcode.writer = 'endnote';
+// Positional args: file.docx [data.json]  (--flags excluded)
+const positional = process.argv.slice(2).filter(a => !a.startsWith('--'));
 
-//Load the docx file as a binary
-const content = fs
-    .readFileSync( path.resolve(process.cwd(), process.argv[2]), 'binary');
+let fieldcode;
+if (writer === 'endnote') {
+  const mod = await import('./js/endnotefieldcode.mjs');
+  fieldcode = mod.default;
+  fieldcode.mode = 'write';
+} else {
+  const mod = await import('./js/cslfieldcode.mjs');
+  fieldcode = mod.default;
+}
 
-const rawdata = process.argv[3] ? fs.readFileSync(path.resolve(process.cwd(), process.argv[3])) : null;
-
+const content = fs.readFileSync(path.resolve(process.cwd(), positional[0]), 'binary');
+const rawdata = positional[1] ? fs.readFileSync(path.resolve(process.cwd(), positional[1])) : null;
 const data = rawdata ? JSON.parse(rawdata) : {};
 
 const zip = new PizZip(content);
@@ -61,7 +65,7 @@ catch (error) {
         : (error.properties ? [error] : null);
 
     if (errors) {
-        process.stderr.write(`Template error in "${process.argv[2]}":\n\n`);
+        process.stderr.write(`Template error in "${positional[0]}":\n\n`);
         for (const e of errors) {
             const p = e.properties || {};
             process.stderr.write(`  ${p.explanation || e.message}\n`);
@@ -79,8 +83,5 @@ catch (error) {
     process.exit(1);
 }
 
-const buf = doc.getZip()
-             .generate({type: 'nodebuffer'});
-
-// buf is a nodejs buffer, you can either write it to a file or do anything else with it.
-fs.writeFileSync(path.resolve(process.cwd(), process.argv[2]), buf);
+const buf = doc.getZip().generate({ type: 'nodebuffer' });
+fs.writeFileSync(path.resolve(process.cwd(), positional[0]), buf);

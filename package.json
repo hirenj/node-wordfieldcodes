@@ -13,7 +13,8 @@
   },
   "bin": {
     "wordfieldcode": "main.js",
-    "refmanager": "citation.js"
+    "refmanager": "citation.js",
+    "endnote-convert": "endnote_to_mendeley.mjs"
   },
   "engines" : {
     "node":"18"
