@@ -40,27 +40,20 @@ if (totalFixed > 0) {
     process.stderr.write(`Note: auto-fixed ${totalFixed} tag(s) to "[REF ...]" format\n`);
 }
 
-const doc = new Docxtemplater();
-doc.attachModule(fieldcode);
-doc.loadZip(zip).setOptions({delimiters:{start:'[REF',end:']'}});
-
-const objectKeysToLowerCase = function (origObj) {
-    return Object.keys(origObj).reduce(function (newObj, key) {
-        let val = origObj[key];
-        let newVal = (typeof val === 'object') ? objectKeysToLowerCase(val) : val;
-        newObj[key.toLowerCase()] = newVal;
+const objectKeysToLowerCase = (origObj) =>
+    Object.keys(origObj).reduce((newObj, key) => {
+        const val = origObj[key];
+        newObj[key.toLowerCase()] = (typeof val === 'object') ? objectKeysToLowerCase(val) : val;
         return newObj;
     }, {});
-};
 
-doc.setData(objectKeysToLowerCase(data));
-
-// Endnote xml format for a single DOI?
-// ADDIN EN.CITE <xml><records><record><electronic-resource-num>123.456/a.b.c</electronic-resource-num></record></records></xml>
-
+const doc = new Docxtemplater(zip, {
+    modules: [fieldcode],
+    delimiters: { start: '[REF', end: ']' },
+});
 
 try {
-    await doc.renderAsync();
+    await doc.renderAsync(objectKeysToLowerCase(data));
 }
 catch (error) {
     const errors = error.properties && error.properties.errors

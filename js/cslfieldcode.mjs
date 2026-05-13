@@ -319,8 +319,6 @@ const cslCitationModule = {
         if (item.itemData.DOI) {
           if (!document_doi_cache[item.itemData.DOI]) {
             document_doi_cache[item.itemData.DOI] = item;
-          } else {
-            console.log(`Removing duplicate entry for ${item.itemData.DOI}`);
           }
           return document_doi_cache[item.itemData.DOI];
         }
