@@ -124,6 +124,10 @@ const generate_csl_from_template = async (values) => {
     while ((m = re.exec(id))) all_ids.push(new PMID(m[1], `PMID:${m[1]}`));
     re = /DOI\s*[:_]?[_\s]*(10\.\d{4,9}\/[-._;()\/:A-Z0-9]+)/gi;
     while ((m = re.exec(id))) all_ids.push(new DOI(m[1], `DOI:${m[1]}`));
+    // Bare numbers with no prefix (e.g. [REF 1234567, 5678910]) are assumed to be PMIDs.
+    // Strip leading underscores that result from space→_ substitution in ids.
+    const bare = id.replace(/^[_\s]+|[_\s]+$/g, '');
+    if (bare && /^\d+$/.test(bare)) all_ids.push(new PMID(bare, `PMID:${bare}`));
   }
 
   let citationItems = await Promise.all(
