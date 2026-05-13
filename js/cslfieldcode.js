@@ -106,6 +106,11 @@ const retrieve_csl_for_pmid = async (pmid,tries=2) => {
   if ( ! doi ) {
     console.log(`Retrieving CSL for ${pmid}`);
     doi = await fetch_pmid_doi_data(pmid,tries);
+    if (typeof doi == 'string') {
+      doi = doi;
+    } else {
+      doi = doi.DOI;
+    }
   } else {
     console.log(`Using library DOI for ${pmid}`);
     doi = doi.DOI;
